@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TedarikCore.Api/TedarikCore.Api.csproj" />
+    <Project Path="src/TedarikCore.Application/TedarikCore.Application.csproj" />
+    <Project Path="src/TedarikCore.Domain/TedarikCore.Domain.csproj" />
+    <Project Path="src/TedarikCore.Infrastructure/TedarikCore.Infrastructure.csproj" />
+  </Folder>
+</Solution>

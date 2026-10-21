@@ -1,0 +1,11 @@
+## .NET / Visual Studio
+.vs/
+bin/
+obj/
+*.user
+*.suo
+
+## Gizli bilgiler (kaynak koda yazılmaz)
+appsettings.*.local.json
+secrets.json
+.env

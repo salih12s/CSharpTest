@@ -1,0 +1,6 @@
+﻿@TedarikCore_Api_HostAddress = http://localhost:5229
+
+GET {{TedarikCore_Api_HostAddress}}/health
+Accept: text/plain
+
+###
