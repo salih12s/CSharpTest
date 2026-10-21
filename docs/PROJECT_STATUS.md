@@ -47,18 +47,27 @@ Son güncelleme: 2026-10-21
 - `dotnet-ef` 10.0.12 yerel araç olarak eklendi (`dotnet-tools.json`); Api projesine `Microsoft.EntityFrameworkCore.Design` 10.0.12 (`PrivateAssets=all`).
 - Testler 15 → 59 (UnitTests 10 → 54, IntegrationTests 5): Domain kuralları (28), EF eşlemesi (DB'siz, 11) ve migration (5: varlık, model–snapshot uyumu, `Up` içeriği, yıkıcı işlem yokluğu, `Down`).
 
+### ADIM 06 — Gerçek PostgreSQL migration ve constraint testleri (`feature/adim-05-product` dalı üzerinde)
+- `tedarikcore_test` veritabanı **kullanıcı onayıyla** oluşturuldu (`CREATE DATABASE tedarikcore_test;`, rol/yetki değişikliği yok). Önce yokluğu salt-okunur sorguyla doğrulandı.
+- `ConnectionStrings:Test` User Secrets'a yazıldı; `ConnectionStrings:Default` değişmedi.
+- `InitialCatalog` migration'ı **kullanıcının ayrı onayıyla yalnızca `tedarikcore_test`'e uygulandı** (`dotnet ef database update`). Uygulanan yapılar PostgreSQL'den doğrulandı: `products` (5 kolon), `pk_products`, `ix_products_sku` (UNIQUE), `ck_products_price_kurus_positive` (`CHECK ((price_kurus > 0))`), `__EFMigrationsHistory`.
+- `tedarikcore_dev` ve diğer veritabanları değişmedi; `tedarikcore_dev` hâlâ **0 tablo** (migration orada uygulanmadı).
+- Gerçek PostgreSQL integration testleri: yaz/oku, fiyat değişikliğinin kalıcılığı, farklı SKU'lar, aynı SKU → `23505`, fiyat 0 / negatif / güncelleme → `23514`, eşzamanlı aynı SKU (biri kazanır, diğeri `23505`), harf büyüklüğü davranışı, rollback izolasyonu, şema doğrulaması.
+- Güvenlik koruması (`PostgresTestDatabase`): hedef `tedarikcore_test` değilse yazma yok; koruma testle kanıtlandı.
+- Testler 59 → 89 (UnitTests 54, IntegrationTests 35).
+
 ## Bilinen eksikler
 - Saf unit test yok: henüz test edilecek Domain/Application mantığı bulunmuyor. UnitTests şimdilik yalnızca mimari testi içeriyor.
 - Geliştirme bağlantısı `postgres` yönetici kullanıcısı ve basit bir demo parolasıyla kuruldu (kullanıcı kararı: canlıya çıkılmayacak demo). Canlı kullanımdan önce yetkisi sınırlı ayrı bir kullanıcı gerekir.
-- Gerçek-DB testi `tedarikcore_dev`'e bağlanıyor (yalnızca bağlantı denemesi). Veri yazan testlerden önce ayrı test veritabanı gerekir.
-- `tedarikcore_dev` boş: `InitialCatalog` migration'ı yazıldı ama **uygulanmadı**. Gerçek PostgreSQL'de çalıştığı henüz kanıtlanmadı; SQL scriptinin üretilmiş olması uygulandığı anlamına gelmez.
-- SKU benzersizliği yalnızca unique index'le korunuyor; gerçek veritabanıyla yazılmış test henüz yok (ayrı test veritabanı onay bekliyor).
-- Fiyat CHECK kısıtının PostgreSQL'de gerçekten reddettiği (ör. `price_kurus = 0` insert) henüz denenmedi; yalnızca SQL ve model düzeyinde doğrulandı.
+- `/health/ready` gerçek-DB testi (ADIM 04) hâlâ `Default` (`tedarikcore_dev`) bağlantısını yalnızca okuma/bağlanma amacıyla kullanıyor; yazma testleri `tedarikcore_test`'te.
+- `tedarikcore_dev` boş (0 tablo): `InitialCatalog` orada **uygulanmadı**. Migration'ın gerçek PostgreSQL'de çalıştığı `tedarikcore_test` üzerinde kanıtlandı.
+- Migration yalnızca `tedarikcore_test`'e uygulandı; `tedarikcore_dev`'e uygulanması ayrı onay bekliyor.
+- SKU unique index'i **harf büyüklüğüne duyarlı**: Domain SKU'yu büyük harfe çevirdiği için `Product.Create` ile çakışma çıkmaz, ama ham SQL `ABC` ve `abc`'yi ayrı SKU olarak ekleyebilir (`tedarikcore_test`'te gözlemlendi). Şema değişikliği yapılmadı; seçenekler DECISIONS 023'te, onay bekliyor.
 - CI bilerek yok (karar: yalnızca yerel test); testlerin çalıştırılması geliştiricinin sorumluluğunda.
 - Coverage ölçümü kurulmadı (`coverlet.collector` pakete dahil ama kullanılmıyor).
 
 ## Sırada
-- ADIM 06 (kullanıcı onayı bekleniyor). `feature/adim-05-product` dalı push edildi, PR açıldı; kod incelemesi ve merge onayı bekleniyor.
+- ADIM 07 (kullanıcı onayı bekleniyor). ADIM 06 değişiklikleri `feature/adim-05-product` dalında yerel commit; push edilmedi. PR #2 açık, merge onayı bekleniyor.
 
 ## Kapsam dışı (henüz yapılmadı)
 EF Core migration/entity, Authentication/JWT, Product/Order/Inventory iş mantığı, React frontend, Docker/deployment.

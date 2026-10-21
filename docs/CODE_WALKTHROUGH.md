@@ -368,9 +368,9 @@ Aşağıdaki aşama sırası bir **öneridir**; kesin plan değildir. Her aşama
 
 | Eksik | Neden henüz yok | Eklenebileceği aşama (öneri) |
 |---|---|---|
-| `InitialCatalog` migration'ının **uygulanması** | Bilerek yapılmadı: onay bekliyor. Migration dosyası ve SQL'i var, ama `tedarikcore_dev` hâlâ boş | Kullanıcı onayından sonra (öneri: ADIM 06) |
+| `InitialCatalog` migration'ının `tedarikcore_dev`'e **uygulanması** | `tedarikcore_test`'e uygulandı ve doğrulandı; `tedarikcore_dev` bilerek hâlâ boş (0 tablo), onay bekliyor | Kullanıcı onayından sonra |
+| SKU harf büyüklüğü duyarlılığı | Unique index `ABC` ile `abc`'yi ayrı sayıyor (yalnızca Domain'i atlayan yazıcılar için risk); şema değişmedi | Karar verilirse yeni migration (bkz. DECISIONS 023) |
 | Ürün için veri yazan/okuyan kod (repository, servis), API | Kapsam dışıydı | Migration uygulandıktan sonra |
-| CHECK kısıtının (`price_kurus > 0`) PostgreSQL'de gerçekten reddettiğinin kanıtı | Kısıt SQL'de ve modelde var, ama gerçek veritabanında denenmedi | Ayrı test veritabanı onaylanınca |
 | Güvenli veritabanı kullanıcısı | Geliştirmede `postgres` yönetici kullanıcısı ve basit bir demo parolası kullanılıyor | Canlıya çıkmadan önce; ayrı, yetkisi sınırlı kullanıcı |
 | Test için ayrı veritabanı | Gerçek-DB testi şimdilik `tedarikcore_dev`'e bağlanıyor (yalnızca okuma/bağlanma) | Veri yazan ilk testlerden önce (öneri: `tedarikcore_test`) |
 | Domain kavramları Order, Inventory (Product artık var) | İş kuralı henüz tasarlanmadı | Sonraki modüllerle |
@@ -425,7 +425,7 @@ Uzunluk sınırları `Product.MaxSkuLength` ve `Product.MaxNameLength` sabitleri
 ### Migration (`Persistence/Migrations`)
 - **Ne yapar:** Veritabanı şemasını koddan üretilen adımlarla değiştirir. `InitialCatalog` yalnızca `products` tablosunu (içinde birincil anahtar ve **CHECK** kısıtı), `ix_products_sku` indeksini oluşturur (SQL'i `CREATE TABLE`, `CREATE UNIQUE INDEX` ve bir geçmiş kaydı ekler; `DROP`/`DELETE`/`ALTER` yoktur). **CHECK kısıtı** = tabloya her satır eklenirken/güncellenirken veritabanının kontrol ettiği kural; `price_kurus > 0` olmayan satırı Domain'i atlayan bir yol bile ekleyemez.
 - **Dosyalar:** `..._InitialCatalog.cs` (uygula: `Up`; geri al: `Down`), `.Designer.cs` (EF'in iç kaydı), `AppDbContextModelSnapshot.cs` (modelin son hâlinin fotoğrafı; bir sonraki migration "ne değişti" farkını bununla bulur).
-- **Hâlâ uygulanmadı.** Dosya ve SQL var ama hiçbir veritabanında çalıştırılmadı. `tedarikcore_dev` boş. SQL'in üretilmiş olması PostgreSQL'de başarıyla çalıştığını **kanıtlamaz**; bunu ancak onaydan sonraki uygulama adımı gösterir.
+- **Uygulama durumu:** Yalnızca `tedarikcore_test` veritabanına, kullanıcı onayıyla uygulandı ve tablo/kısıt/indeks PostgreSQL'den okunarak doğrulandı. `tedarikcore_dev` **hâlâ boş**.
 - **Güvenlik önlemi:** Migration üretilirken bağlantı, kimsenin dinlemediği bir adrese çevrilir; araç yanlışlıkla gerçek veritabanına bağlansa bile bağlanamaz.
 
 ### Yeni testler (UnitTests)
@@ -438,4 +438,43 @@ Uzunluk sınırları `Product.MaxSkuLength` ve `Product.MaxNameLength` sabitleri
   4. `Up` içinde `CreateTable`/`CreateIndex` dışında hiçbir işlem (silme, ham SQL vb.) yok.
   5. `Down` yalnızca `products` tablosunu düşürüyor.
   3. ve 4. test, migration dosyasındaki bir satır silinirse snapshot hâlâ doğru görünse bile kırılır (mutasyonla doğrulandı).
-- Test edilmeyen: SKU unique kısıtının **gerçekten** çalıştığı ve migration'ın gerçek PostgreSQL'de uygulandığı. İkisi de gerçek veritabanı ister; ayrı test veritabanı onayı bekliyor.
+- Gerçek PostgreSQL testleri bir sonraki bölümde (11).
+
+---
+
+## 11. Gerçek PostgreSQL integration testleri (`tedarikcore_test`)
+
+**Neden ayrı veritabanı?** Unique index ve CHECK kısıtını ancak gerçek PostgreSQL gösterebilir (mock ya da bellek içi sahte veritabanı "reddetti" diyemez). Testler veri yazdığı için `tedarikcore_dev`'e (geliştirme verisi) ve başka projelerin veritabanlarına hiç dokunmaz; ayrı `tedarikcore_test` kullanılır. Bağlantısı `ConnectionStrings:Test` anahtarındadır.
+
+### Güvenlik koruması (`Database/PostgresTestDatabase.cs`)
+- Bağlantı dizesi yoksa gerçek-DB testleri **Skipped** (atlandı) görünür; yeşil sayılmaz.
+- Dize varsa ama veritabanı adı tam `tedarikcore_test` değilse ya da host yerel değilse test **Failed** olur ve hiçbir şey yazılmaz.
+- Bağlandıktan sonra sunucuya `select current_database()` sorulur; cevap `tedarikcore_test` değilse test durur.
+- Bu koruma kendi testlerine sahiptir (`PostgresTestDatabaseGuardTests`, DB'siz, 15 test) ve dev'e işaret eden dizeyle denendi.
+
+### Veri izolasyonu
+- Her test benzersiz SKU üretir (`T06-...-<guid>`), böylece testler birbirinin verisine çarpmaz ve sıradan bağımsızdır.
+- Yazma, **commit edilmeyen bir transaction** içinde yapılır; test bitince **rollback** olur ve tabloda kalıntı kalmaz.
+- Tek istisna eşzamanlılık testidir: iki ayrı bağlantı gerçekten commit etmek zorundadır. O test kendi SKU'sunu `finally` içinde silerek temizler.
+
+### Ne test ediliyor? (`ProductPostgresTests`, 11 test)
+| Test | Beklenen |
+|---|---|
+| Geçerli ürünü yaz ve geri oku | Aynı değerler okunur (ad kırpılmış) |
+| Fiyat değiştir, kaydet, oku | Yeni fiyat kalıcı (private setter EF ile çalışıyor) |
+| Farklı SKU'lu iki ürün | Sorunsuz kaydedilir |
+| Aynı SKU ikinci kez | PostgreSQL **`23505`** (unique violation), kısıt `ix_products_sku` |
+| Ham SQL, fiyat `1` (kontrol) | Başarılı: aşağıdaki hataların sebebinin yalnızca fiyat olduğunu gösterir |
+| Ham SQL, fiyat `0` ve `-1` | PostgreSQL **`23514`** (check violation), kısıt `ck_products_price_kurus_positive` |
+| Ham SQL, fiyatı `0`'a güncelle | `23514` |
+| `ABC` ve `abc` (ham SQL) | **İkisi de eklenir**: indeks harf büyüklüğüne duyarlı (davranış belgelendi, bkz. DECISIONS 023) |
+| İki bağlantı aynı SKU'yu aynı anda ekler | Tam biri kazanır, diğeri `23505` alır (**race** durumu) |
+| Transaction geri alınır | Satır kalmaz (izolasyon yönteminin kanıtı) |
+
+**Neden "ham SQL"?** `Product.Create` zaten sıfır ya da negatif fiyatı reddeder. Veritabanı kısıtı, Domain'i **atlayan** bir yolun (elle SQL, toplu aktarım, başka bir servis) da engellendiğini göstermek içindir: iki savunma hattı.
+
+### Şema doğrulaması (`ProductSchemaPostgresTests`, 4 test)
+Migration'ın gerçekten oluşturduğu yapıları PostgreSQL sistem kataloglarından okur: yalnızca `products` ve `__EFMigrationsHistory` tabloları, kolon türleri ve `NOT NULL` durumları, `pk_products`, `ix_products_sku` (UNIQUE), `ck_products_price_kurus_positive` (`CHECK ((price_kurus > 0))`) ve geçmişte `InitialCatalog` kaydı. Migration uygulanmamışsa bu testler bilerek Failed olur (`42P01`).
+
+### Test veritabanını hazırlama
+Testler migration **uygulamaz**. Test veritabanı bir kez, kullanıcı onayıyla hazırlanır (komut ve güvenceler `CLAUDE.md`'de). Migration'ı uygulamadan önce testler `42P01: relation "products" does not exist` ile kırmızıydı; uyguladıktan sonra yeşile döndü.
