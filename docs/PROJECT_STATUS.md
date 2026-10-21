@@ -39,16 +39,26 @@ Son güncelleme: 2026-10-21
 - Testler 10 → 15: DB erişilemezken `/health` 200 ve `/health/ready` 503, bağlantı dizesi yokken net hata, gerçek DB ile `/health/ready` 200 (DB yoksa `Skipped`).
 - Migration, entity ve iş modülleri yapılmadı (kapsam dışı).
 
+### ADIM 05 — Product domain ve ilk migration (`feature/adim-05-product` dalı)
+- `Domain/Catalog/Product.cs`: `Id`, `Sku`, `Name`, `PriceKurus`, `IsActive`; `Product.Create(...)` ve `ChangePrice(...)` ile doğrulama; setter'lar private.
+- `Infrastructure`: `DbSet<Product>`, `Persistence/Configurations/ProductConfiguration.cs` (tablo `products`, snake_case kolonlar, `ix_products_sku` unique index).
+- İlk migration `InitialCatalog` **üretildi** (`Persistence/Migrations`). Yalnızca `products` tablosu ve `ix_products_sku` indeksi oluşturur; DROP/DELETE/ALTER yok.
+- **Migration hiçbir veritabanına uygulanmadı.** `tedarikcore_dev` içinde tablo yok (salt-okunur sorguyla doğrulandı).
+- `dotnet-ef` 10.0.12 yerel araç olarak eklendi (`dotnet-tools.json`); Api projesine `Microsoft.EntityFrameworkCore.Design` 10.0.12 (`PrivateAssets=all`).
+- Testler 15 → 55 (UnitTests 10 → 50, IntegrationTests 5): Domain kuralları (28), EF eşlemesi (DB'siz, 10) ve model–migration uyumu (2).
+
 ## Bilinen eksikler
 - Saf unit test yok: henüz test edilecek Domain/Application mantığı bulunmuyor. UnitTests şimdilik yalnızca mimari testi içeriyor.
 - Geliştirme bağlantısı `postgres` yönetici kullanıcısı ve basit bir demo parolasıyla kuruldu (kullanıcı kararı: canlıya çıkılmayacak demo). Canlı kullanımdan önce yetkisi sınırlı ayrı bir kullanıcı gerekir.
 - Gerçek-DB testi `tedarikcore_dev`'e bağlanıyor (yalnızca bağlantı denemesi). Veri yazan testlerden önce ayrı test veritabanı gerekir.
-- `tedarikcore_dev` boş: tablo yok, migration yok.
+- `tedarikcore_dev` boş: `InitialCatalog` migration'ı yazıldı ama **uygulanmadı**. Gerçek PostgreSQL'de çalıştığı henüz kanıtlanmadı; SQL scriptinin üretilmiş olması uygulandığı anlamına gelmez.
+- SKU benzersizliği yalnızca unique index'le korunuyor; gerçek veritabanıyla yazılmış test henüz yok (ayrı test veritabanı onay bekliyor).
+- Veritabanında fiyat için CHECK kısıtı (`price_kurus > 0`) yok; kural yalnızca Domain'de. Öneri olarak bırakıldı.
 - CI bilerek yok (karar: yalnızca yerel test); testlerin çalıştırılması geliştiricinin sorumluluğunda.
 - Coverage ölçümü kurulmadı (`coverlet.collector` pakete dahil ama kullanılmıyor).
 
 ## Sırada
-- ADIM 05 (kullanıcı onayı bekleniyor). ADIM 04, PR #1 (`feature/adim-04-efcore` → `main`) kod incelemesinden sonra `main`'e merge edildi.
+- ADIM 06 (kullanıcı onayı bekleniyor). `feature/adim-05-product` dalı henüz push/merge edilmedi.
 
 ## Kapsam dışı (henüz yapılmadı)
 EF Core migration/entity, Authentication/JWT, Product/Order/Inventory iş mantığı, React frontend, Docker/deployment.

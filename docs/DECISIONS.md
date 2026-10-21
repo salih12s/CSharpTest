@@ -41,3 +41,21 @@ GitHub Actions ve ücretli CI servisleri kullanılmaz. Her adım sonunda `restor
 
 ## 014 — Geliştirmede `postgres` kullanıcısı ve demo parolası (2026-10-21)
 Kullanıcı, projenin canlıda çalıştırılmayacak bir demo olduğunu belirterek `postgres` kullanıcısını ve basit bir parolayı kullanmamı istedi. Parola yalnızca User Secrets'ta, Git'te yok. **Risk:** canlıya taşınırsa yönetici kullanıcı ve basit parola kabul edilemez; ayrı kullanıcı ve güçlü parola gerekir.
+
+## 015 — Product: private setter, `Create` fabrikası, yerleşik exception'lar (2026-10-21)
+Özellikler `private set`; nesne `Product.Create(...)` ile doğrulanarak doğar, fiyat yalnızca `ChangePrice` ile değişir. EF Core için `private` parametresiz constructor var. Hatalarda `ArgumentException` (SKU/ad) ve `ArgumentOutOfRangeException` (fiyat) kullanıldı; özel `DomainException` sınıfı yazılmadı. **Neden:** kuralları nesnenin kendisi korur, dışarıdan geçersiz hâl üretilemez; ayrı hata hiyerarşisi için henüz ihtiyaç yok (gereksiz soyutlama kuralı). API katmanı geldiğinde bu hatalar 400'e çevrilecek.
+
+## 016 — SKU normalizasyonu: kırp + `ToUpperInvariant`, uzunluk kırpmadan sonra ölçülür (2026-10-21)
+Kültürden bağımsız büyük harf kullanıldı; Türkçe kültürde `ToUpper()` "i"yi "İ" yapıp aynı SKU'yu farklı makinede farklı üretirdi (testle kanıtlandı: mutasyonda test kırıldı). Baştaki/sondaki boşluk uzunluk sınırına sayılmaz. SKU benzersizliği **veritabanındaki unique index** (`ix_products_sku`) tarafından korunur; tek bir nesne bunu bilemez. Büyük/küçük harf farkı normalizasyonla zaten ortadan kalkar.
+
+## 017 — Fiyat kuruş cinsinden `long`, sıfır geçersiz (2026-10-21)
+`PriceKurus` > 0. `decimal` ve kayan nokta yok, böylece yuvarlama hatası oluşmaz. Sipariş sırasında fiyat değişirse müşterinin yeniden onayı kuralı Order/Checkout modülüne bırakıldı. DB'de `CHECK (price_kurus > 0)` henüz yok (öneri olarak not edildi).
+
+## 018 — Eşleme Fluent API ile, snake_case ve açık kısıt adları (2026-10-21)
+`IEntityTypeConfiguration<Product>` ayrı sınıfta; `ApplyConfigurationsFromAssembly` ile yüklenir. Tablo `products`, kolonlar `id, sku, name, price_kurus, is_active`; birincil anahtar `pk_products`, indeks `ix_products_sku`. `Id` için `ValueGeneratedNever` (Guid Domain'de üretilir). Maksimum uzunluklar `Product.MaxSkuLength/MaxNameLength` sabitlerinden gelir: kural tek yerde. Eşleme DB'ye bağlanmadan modelden test edilir.
+
+## 019 — `dotnet-ef` yerel araç 10.0.12, Design paketi Api'de (2026-10-21)
+Makinede global `dotnet-ef` 10.0.13 vardı; projedeki EF Core 10.0.12 ile eşlemek için `dotnet-tools.json` ile 10.0.12 sabitlendi. `Microsoft.EntityFrameworkCore.Design` başlangıç projesi Api'ye `PrivateAssets=all` ile eklendi (çalışma zamanına taşınmaz). Migration'lar Infrastructure/Persistence/Migrations altında. **Neden:** araç sürümü kişiden kişiye değişmesin; Design paketi üretim çıktısına sızmasın.
+
+## 020 — Migration üretilir, uygulanmaz; uyum testi eklendi (2026-10-21)
+`InitialCatalog` yalnızca üretildi ve SQL'i incelendi; `database update`, `Migrate()`, `EnsureCreated()` ve `EnsureDeleted()` çağrılmadı. Üretim sırasında bağlantı ulaşılamaz adrese çevrildi ki yanlışlıkla gerçek veritabanına bağlanılmasın. `MigrationTests.Model_Matches_LatestMigrationSnapshot` entity değişip migration unutulursa kırılır (mutasyonla doğrulandı). **Bilinen sınır:** migration'ın gerçek PostgreSQL'de başarıyla çalıştığı henüz kanıtlanmadı.

@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\TedarikCore.Infrastructure\TedarikCore.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\TedarikCore.Domain\TedarikCore.Domain.csproj" />
   </ItemGroup>
 
 </Project>
