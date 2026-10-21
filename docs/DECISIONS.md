@@ -25,4 +25,19 @@ Reflection (`GetReferencedAssemblies`) yerine `<ProjectReference>` satırları o
 Top-level `Program.cs` sınıfı internal üretir; `WebApplicationFactory<Program>` için tek satırlık `public partial class Program;` eklendi. `InternalsVisibleTo` yerine bu seçildi, çünkü Microsoft'un önerdiği yol ve tek satır.
 
 ## 009 — CI yok, testler yalnızca yerelde (2026-10-21)
-GitHub Actions ve ücretli CI servisleri kullanılmaz. Her adım sonunda estore, uild, 	est yerelde çalıştırılır ve sonuçlar raporlanır. **Neden:** kullanıcının kesin kararı (maliyet ve basitlik). **Risk:** testi çalıştırmayı unutmak kırık kodu ana dala taşıyabilir; commit öncesi test geçme kuralı (CLAUDE.md) bunu hafifletir.
+GitHub Actions ve ücretli CI servisleri kullanılmaz. Her adım sonunda `restore`, `build`, `test` yerelde çalıştırılır ve sonuçlar raporlanır. **Neden:** kullanıcının kesin kararı (maliyet ve basitlik). **Risk:** testi çalıştırmayı unutmak kırık kodu ana dala taşıyabilir; commit öncesi test geçme kuralı (`CLAUDE.md`) bunu hafifletir.
+
+## 010 — EF Core + Npgsql, `AppDbContext` Infrastructure/Persistence'ta (2026-10-21)
+`Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.3 (EF Core 10.0.12 ile gelir). `AppDbContext` bilerek boş: entity ve migration kapsam dışıydı. **Neden:** veritabanı erişimi Infrastructure'a aittir; Domain ve Application EF Core'u bilmez.
+
+## 011 — Bağlantı dizesi User Secrets'ta, ilk kullanımda okunur (2026-10-21)
+`ConnectionStrings:Default`, geliştirmede User Secrets'tan (ya da ortam değişkeninden) gelir; Git'e girmez. `AddDbContext` içindeki fonksiyon bağlantı dizesini **DbContext ilk kullanıldığında** okur, eksikse net bir `InvalidOperationException` verir. **Neden:** dizesi olmayan makinede (yeni klon) uygulama ve `/health` yine açılır, test paketi çalışır; hata yalnızca veritabanı gereken yerde görünür. Bedeli: yanlış yapılandırma uygulama açılırken değil, `/health/ready`'de fark edilir.
+
+## 012 — `/health` (liveness) ve `/health/ready` (readiness) ayrıldı (2026-10-21)
+`/health` hiçbir kontrol çalıştırmaz (`Predicate = _ => false`), `/health/ready` yalnızca `ready` etiketli kontrolleri (şimdilik `AddDbContextCheck<AppDbContext>`) çalıştırır. **Neden:** veritabanı kapanınca uygulama "ölü" sayılıp yeniden başlatılmasın; "trafik almaya hazır mı" ayrı sorulsun. Etiket adı `HealthCheckTags.Ready` sabitinde, çünkü `DependencyInjection` sınıf adı iki katmanda aynı ve `Program.cs`'te çakışıyordu. Hazır paket (`Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore`) kullanıldı; el yazması bağlantı kodu yazılmadı.
+
+## 013 — Gerçek-DB testi koşullu atlanır (2026-10-21)
+`[RequiresDatabaseFact]`, bağlantı dizesi yoksa testi `Skipped` yapar. **Neden:** veritabanı olmayan makinede test kırmızıya dönmesin, ama sessizce "geçti" de görünmesin. Başarısızlık yolları (DB erişilemez, dize yok) gerçek veritabanı olmadan test edilir.
+
+## 014 — Geliştirmede `postgres` kullanıcısı ve demo parolası (2026-10-21)
+Kullanıcı, projenin canlıda çalıştırılmayacak bir demo olduğunu belirterek `postgres` kullanıcısını ve basit bir parolayı kullanmamı istedi. Parola yalnızca User Secrets'ta, Git'te yok. **Risk:** canlıya taşınırsa yönetici kullanıcı ve basit parola kabul edilemez; ayrı kullanıcı ve güçlü parola gerekir.

@@ -27,7 +27,7 @@ Sözlük (sık geçen İngilizce terimler):
 |---|---|---|
 | `TedarikCore.Domain` | İşin kendisi: "Ürün", "Sipariş" gibi kavramlar ve değişmez iş kuralları. Hiçbir şeye bağımlı değildir. | Boş. Henüz kavram yok. |
 | `TedarikCore.Application` | Uygulamanın yaptığı işler (use case): "sipariş oluştur" gibi. Dış dünyayla konuşacağı şeylerin sözleşmelerini (interface) burada tanımlar. | Yalnızca `AddApplication()` kayıt metodu (boş). |
-| `TedarikCore.Infrastructure` | Dış dünya ile gerçek konuşma: veritabanı, e-posta, dosya vb. Application'daki sözleşmeleri gerçekler. | Yalnızca `AddInfrastructure()` kayıt metodu (boş). |
+| `TedarikCore.Infrastructure` | Dış dünya ile gerçek konuşma: veritabanı, e-posta, dosya vb. Application'daki sözleşmeleri gerçekler. | `AppDbContext` (PostgreSQL kapısı), `AddInfrastructure()` kayıt metodu ve `/health/ready` için veritabanı sağlık kontrolü. |
 | `TedarikCore.Api` | Uygulamanın HTTP kapısı: istekleri alır, Application'a iletir, cevabı döner. Tüm parçaları `Program.cs`'te birleştirir. | `Program.cs` ve ayarlar. `/health` buradan çıkar. |
 
 Mantık: iş kuralları (Domain) web'den, veritabanından ve çerçeveden habersiz kalır. Yarın veritabanı ya da web çerçevesi değişse bile Domain değişmez.
@@ -59,7 +59,7 @@ Neden Application, Infrastructure'ı bilmiyor? Application "bana ürünleri kayd
 | `src/TedarikCore.Api/Controllers` | Api | Controller HTTP'ye aittir (adres, status kodu). Boş, `.gitkeep` var; ilk endpoint'ler gelince dolacak. |
 | `src/TedarikCore.Api/Properties` | Api | `launchSettings.json` içerir: yerel çalıştırmada hangi portlar (http `5229`, https `7189`) ve hangi ortam (`Development`) kullanılacak. |
 | `src/TedarikCore.Application/Abstractions` | Application | Interface'lerin (sözleşmelerin) duracağı yer. Application tanımlar, Infrastructure gerçekler. Henüz boş. |
-| `src/TedarikCore.Infrastructure/Persistence` | Infrastructure | "Persistence" = verinin kalıcı saklanması. Veritabanı erişim kodu buraya gelecek. Henüz boş. |
+| `src/TedarikCore.Infrastructure/Persistence` | Infrastructure | "Persistence" = verinin kalıcı saklanması. Veritabanı erişim kodu burada. Şimdilik yalnızca `AppDbContext.cs` var (tablo yok). |
 | `tests/TedarikCore.UnitTests` | Test | Hızlı testler; uygulama ayağa kalkmaz. |
 | `tests/TedarikCore.IntegrationTests` | Test | Uygulamayı bellekte ayağa kaldırıp HTTP ile deneyen testler. |
 | `docs/` | — | Proje belgeleri (durum, kararlar, bu rehber). |
@@ -68,7 +68,7 @@ Klasör içinde olmayan ama önemli dosyalar:
 
 - `CLAUDE.md` (kök): projenin kalıcı kuralları.
 - `.gitignore`: git'in saymaması gereken dosyalar (`bin/`, `obj/`, `.vs/`, `*.user`, gizli dosyalar, test çıktıları).
-- `appsettings.json` / `appsettings.Development.json`: uygulama ayarları (şimdilik yalnızca log seviyeleri ve `AllowedHosts`). Parola ve bağlantı bilgisi buraya yazılmaz.
+- `appsettings.json` / `appsettings.Development.json`: uygulama ayarları (şimdilik yalnızca log seviyeleri ve `AllowedHosts`). Parola ve bağlantı bilgisi buraya yazılmaz; veritabanı bağlantı dizesi **User Secrets**'tadır (bkz. aşağıdaki "Veritabanı bağlantısı" bölümü).
 - `TedarikCore.Api.http`: Visual Studio'dan `/health`'e elle istek atmak için örnek dosya.
 - `TedarikCore.Api.csproj.user`: Visual Studio'nun kişisel ayarı (git'e girmez).
 - `bin/` ve `obj/`: derleme çıktıları; silinse yeniden üretilir. Git'e girmez.
@@ -82,85 +82,99 @@ Temizlik notu: `Domain/Common` ve `Api/Middleware` klasörleri yalnızca `.gitke
 Dosya: `src/TedarikCore.Api/Program.cs`. Uygulamanın giriş noktasıdır. Üç aşaması var: **kur** (servisleri kaydet), **kapıyı hazırla** (middleware sırasını belirle), **çalıştır**.
 
 ```csharp
-using TedarikCore.Application;                 // 1
-using TedarikCore.Infrastructure;              // 2
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;   // 1
+using TedarikCore.Application;                          // 2
+using TedarikCore.Infrastructure;                       // 3
 ```
-1–2. `AddApplication()` ve `AddInfrastructure()` metodlarını bu namespace'lerden kullanabilmek için.
+1. `HealthCheckOptions` sınıfını kullanabilmek için (sağlık adreslerini ayarlarken lazım).
+2–3. `AddApplication()`, `AddInfrastructure()` ve `HealthCheckTags` için bu namespace'leri açar.
 
 ```csharp
-var builder = WebApplication.CreateBuilder(args);   // 4
+var builder = WebApplication.CreateBuilder(args);       // 5
 ```
-4. Uygulamayı kuracak "inşaatçı"yı (builder) yaratır. `args` komut satırı parametreleridir. Ayar dosyalarını (`appsettings*.json`), log'u ve web sunucusunu (Kestrel) varsayılanlarla hazırlar. `WebApplication` için ayrıca `using` yazmaya gerek yok, çünkü `.csproj`'daki `ImplicitUsings` bunu otomatik ekler.
+5. Uygulamayı kuracak "inşaatçı"yı (builder) yaratır. `args` komut satırı parametreleridir. Ayar kaynaklarını (`appsettings*.json`, **User Secrets**, ortam değişkenleri), log'u ve web sunucusunu (Kestrel) varsayılanlarla hazırlar. `WebApplication` için ayrıca `using` yazmaya gerek yok, çünkü `.csproj`'daki `ImplicitUsings` bunu otomatik ekler.
 
 ```csharp
-builder.Services.AddApplication();             // 8
-builder.Services.AddInfrastructure();          // 9
+builder.Services.AddApplication();                      // 9
+builder.Services.AddInfrastructure(builder.Configuration);   // 10
 ```
-8–9. Katmanların kendi servislerini DI listesine (`Services`) kaydettirir. Şu an ikisi de boş; kayıt gerekince `Program.cs` büyümeden ilgili katmanda eklenir (bkz. 4. bölüm).
+9–10. Katmanların kendi servislerini DI listesine (`Services`) kaydettirir. `AddInfrastructure`'a ayar nesnesi (`builder.Configuration`) verilir; veritabanı bağlantı dizesi oradan okunur (bkz. 4. bölüm). `AddApplication` şu an boş.
 
 ```csharp
-builder.Services.AddControllers();             // 11
+builder.Services.AddControllers();                      // 12
 ```
-11. Controller'ları (sınıf tabanlı endpoint'ler) destekler. Henüz controller yok, ama ilerisi için hazır.
+12. Controller'ları (sınıf tabanlı endpoint'ler) destekler. Henüz controller yok, ama ilerisi için hazır.
 
 ```csharp
-builder.Services.AddHealthChecks();            // 12
+builder.Services.AddHealthChecks();                     // 13
 ```
-12. Sağlık kontrol sistemini ekler. Hiç kontrol kaydı olmadığı için sonuç her zaman "Healthy" (sağlıklı) çıkar.
+13. Sağlık kontrol sistemini ekler. (Veritabanı kontrolünü `AddInfrastructure` bu sisteme ekler.)
 
 ```csharp
-builder.Services.AddOpenApi();                 // 14
+builder.Services.AddOpenApi();                          // 15
 ```
-14. API'nin makine tarafından okunabilir tarifini (OpenAPI belgesi, JSON) üretecek servisi ekler. Başka araçlar bu tarifle API'yi tanır.
+15. API'nin makine tarafından okunabilir tarifini (OpenAPI belgesi, JSON) üretecek servisi ekler.
 
 ```csharp
-var app = builder.Build();                     // 16
+var app = builder.Build();                              // 17
 ```
-16. Kayıt aşaması biter; kurulan uygulama nesnesi (`app`) oluşur. Bundan sonra servis eklenmez, yalnızca istek hattı düzenlenir.
+17. Kayıt aşaması biter; kurulan uygulama nesnesi (`app`) oluşur. Bundan sonra servis eklenmez, yalnızca istek hattı düzenlenir.
 
 ```csharp
-if (app.Environment.IsDevelopment())           // 19
+if (app.Environment.IsDevelopment())                    // 20
 {
-    app.MapOpenApi();                          // 21
+    app.MapOpenApi();                                   // 22
 }
 ```
-19–22. Yalnızca geliştirme ortamında `/openapi/v1.json` adresini açar. Canlıya çıkınca bu tarif dışarıya açılmaz.
+20–23. Yalnızca geliştirme ortamında `/openapi/v1.json` adresini açar.
 
 ```csharp
-app.UseHttpsRedirection();                     // 24
+app.UseHttpsRedirection();                              // 25
 ```
-24. `http://` ile gelen isteği `https://` adresine yönlendirir (307 cevabı ile). Bu yüzden testlerde istemci zaten https'e gider (6. bölüm).
+25. `http://` ile gelen isteği `https://` adresine yönlendirir (307 cevabı ile). Bu yüzden testlerde istemci zaten https'e gider (6. bölüm).
 
 ```csharp
-app.UseAuthorization();                        // 26
+app.UseAuthorization();                                 // 27
 ```
-26. "Bu kullanıcının buna izni var mı?" kontrolünü hatta ekler. Henüz kimlik doğrulama ve `[Authorize]` olmadığı için şu an hiçbir şey engellemez; ileride giriş (JWT) eklenince devreye girecek.
+27. "Bu kullanıcının buna izni var mı?" kontrolünü hatta ekler. Henüz kimlik doğrulama ve `[Authorize]` olmadığı için şu an hiçbir şeyi engellemez.
 
 ```csharp
-app.MapControllers();                          // 28
-app.MapHealthChecks("/health");                // 29
+app.MapControllers();                                   // 29
 ```
-28. Controller'ların adreslerini hatta bağlar (şu an sıfır adet).
-29. `/health` adresini sağlık kontrolüne bağlar. Cevap: HTTP 200 ve düz metin `Healthy`. Bir kontrol başarısız olsaydı 503 dönerdi.
+29. Controller'ların adreslerini hatta bağlar (şu an sıfır adet).
 
 ```csharp
-app.Run();                                     // 31
+app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = _ => false });   // 31
 ```
-31. Uygulamayı başlatır ve istek beklemeye başlar. Kapatılana kadar burada bekler.
+31. `/health` adresi. `Predicate = _ => false` "hiçbir kontrolü çalıştırma" demektir. Yani bu adres **yalnızca uygulamanın ayakta olduğunu** söyler ve veritabanına hiç bakmaz. Veritabanı kapalı olsa bile `200 Healthy` döner. (Buna "liveness", yani yaşıyor mu kontrolü denir.)
 
 ```csharp
-public partial class Program;                  // 34
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains(HealthCheckTags.Ready)
+});                                                     // 33–36
 ```
-34. Üst düzey (top-level) `Program.cs` sınıfı varsayılan olarak dışarıya kapalıdır. Bu satır sınıfı `public` yapar ki test projesi `WebApplicationFactory<Program>` ile uygulamayı bulup ayağa kaldırabilsin. Uygulama davranışını değiştirmez.
+33–36. `/health/ready` adresi. Yalnızca `ready` etiketi taşıyan kontrolleri çalıştırır; şu an bu tek kontrol veritabanı bağlantısıdır. Veritabanına ulaşılabiliyorsa `200 Healthy`, ulaşılamıyorsa `503 Unhealthy` döner. (Buna "readiness", yani iş almaya hazır mı kontrolü denir.) Hata ayrıntısı dışarı verilmez, yalnızca `Unhealthy` yazar.
+
+```csharp
+app.Run();                                              // 38
+```
+38. Uygulamayı başlatır ve istek beklemeye başlar. Kapatılana kadar burada bekler.
+
+```csharp
+public partial class Program;                           // 41
+```
+41. Üst düzey (top-level) `Program.cs` sınıfı varsayılan olarak dışarıya kapalıdır. Bu satır sınıfı `public` yapar ki test projesi `WebApplicationFactory<Program>` ile uygulamayı bulup ayağa kaldırabilsin. Uygulama davranışını değiştirmez.
 
 ---
 
-## 4. DependencyInjection.cs dosyaları
+## 4. Infrastructure: DependencyInjection.cs, AppDbContext ve veritabanı bağlantısı
 
-İki dosya var, aynı kalıpta:
+### Application ve Infrastructure `DependencyInjection.cs`
+
+İki dosya benzer kalıptadır. Application'daki hâlâ boştur:
 
 ```csharp
-// Application
 public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
@@ -170,17 +184,38 @@ public static class DependencyInjection
 }
 ```
 
-Infrastructure'daki `AddInfrastructure` de aynıdır.
-
 - `static class`: nesnesi üretilmeyen, yalnızca yardımcı metot taşıyan sınıf.
 - `this IServiceCollection services`: bu bir **extension method** (genişletme metodu). Sayesinde `Program.cs`'te `builder.Services.AddApplication()` diye doğal biçimde çağrılır.
 - `IServiceCollection`: DI kayıt listesi. "Birisi `X` isterse `Y` ver" kayıtları buraya eklenir.
 - `return services;`: zincirleme çağrı yapılabilsin diye listeyi geri verir.
-- Şu an gövde boş çünkü kaydedilecek servis yok. Yine de yazıldı: her katman kendi kaydını kendi içinde tutar, `Program.cs` sade kalır.
-- Bu iki projenin tek paketi `Microsoft.Extensions.DependencyInjection.Abstractions`; `IServiceCollection` tipini sağlar. Web çerçevesinin tamamına bağımlı olmadan DI kullanılır.
+- Her katman kendi kaydını kendi içinde tutar, `Program.cs` sade kalır.
+
+### `AddInfrastructure(services, configuration)` ne yapar?
+
+1. `AddDbContext<AppDbContext>(...)`: `AppDbContext`'i DI listesine kaydeder. İçindeki ayar fonksiyonu **ilk kullanıldığı anda** çalışır:
+   - Ayarlardan `ConnectionStrings:Default` değerini okur.
+   - Yoksa "ConnectionStrings:Default tanımlı değil" diye açık bir hata verir.
+   - Varsa `UseNpgsql(...)` ile "bu veritabanı PostgreSQL" der.
+2. `AddHealthChecks().AddDbContextCheck<AppDbContext>("database", tags: ["ready"])`: veritabanı bağlantısını deneyen bir sağlık kontrolü ekler ve ona `ready` etiketi koyar. `/health/ready` bu etikete bakar.
+
+Neden bağlantı dizesi ilk kullanımda okunuyor? Bağlantı bilgisi yoksa uygulama yine açılır; yalnızca veritabanına ihtiyaç duyan işler (`/health/ready`) başarısız olur. Böylece `/health` ve testler veritabanı kurulu olmayan makinede de çalışır.
+
+### Terimler
+- **EF Core (Entity Framework Core):** Veritabanı tablolarına C# nesneleriyle ulaşmayı sağlayan kütüphane.
+- **Npgsql:** .NET'in PostgreSQL ile konuşma sürücüsü. `Npgsql.EntityFrameworkCore.PostgreSQL` paketi EF Core'u PostgreSQL'e bağlar.
+- **`DbContext` (`AppDbContext`):** Veritabanıyla yapılan işlerin (sorgu, kaydetme) geçtiği kapı. Şu an içi boştur: tablo (`DbSet`) ve migration henüz yok.
+- **`HealthCheckTags.Ready`:** `"ready"` yazısını tek yerde tutan sabit; yazım hatası olmasın diye.
+
+### Veritabanı bağlantısı ve gizli bilgi
+Bağlantı dizesi parola içerdiği için Git'e girmez. Geliştirmede **User Secrets** kullanılır: Windows'ta kullanıcı klasöründe duran, proje dışı bir dosyadır. Api projesinin `.csproj` dosyasındaki `UserSecretsId` (rastgele bir kimlik, sır değildir) hangi dosyanın okunacağını söyler. Kurulum:
+
+```
+dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Port=5432;Database=tedarikcore_dev;Username=...;Password=..." --project src/TedarikCore.Api
+```
+
+Ortam değişkeni de olur: `ConnectionStrings__Default=...` (çift alt çizgi, `:` yerine geçer). Ortam değişkeni User Secrets'ın önüne geçer.
 
 ---
-
 ## 5. `.csproj`, ProjectReference ve PackageReference
 
 `.csproj`, bir projenin "tarif dosyası"dır (XML). Ne olarak derleneceğini ve neye bağlı olduğunu söyler.
@@ -218,10 +253,12 @@ Hangi proje neye bağlı:
 |---|---|---|
 | Domain | — | — |
 | Application | Domain | DependencyInjection.Abstractions |
-| Infrastructure | Application, Domain | DependencyInjection.Abstractions |
+| Infrastructure | Application, Domain | DependencyInjection.Abstractions, Npgsql.EntityFrameworkCore.PostgreSQL, HealthChecks.EntityFrameworkCore |
 | Api | Application, Infrastructure | OpenApi |
-| UnitTests | — (`.csproj` dosyalarını okur) | xunit, Test.Sdk, runner, coverlet |
-| IntegrationTests | Api | Mvc.Testing, xunit, Test.Sdk, runner, coverlet |
+| UnitTests | Infrastructure (DI kaydını denemek için) | Configuration, xunit, Test.Sdk, runner, coverlet |
+| IntegrationTests | Api | Mvc.Testing, Configuration.UserSecrets, xunit, Test.Sdk, runner, coverlet |
+
+Yeni paketlerin işi: `Npgsql.EntityFrameworkCore.PostgreSQL` EF Core'u (ve onun üzerinden `Microsoft.EntityFrameworkCore` paketini) getirir ve PostgreSQL'e bağlar. `HealthChecks.EntityFrameworkCore` bir `DbContext`'in veritabanına bağlanabildiğini deneyen hazır sağlık kontrolünü verir. `Api.csproj` içindeki `<UserSecretsId>` satırı User Secrets dosyasının kimliğidir; sır değildir, Git'e girer.
 
 Not: Api, Domain'e doğrudan bağlı değil; Application üzerinden dolaylı ulaşır. Bu bilinçli, mimari test de izin verilen kümeyi bu şekilde tutar.
 
@@ -254,6 +291,15 @@ Bu testler **integration** türündedir: tek bir fonksiyonu değil, kurulumun ta
 
 ---
 
+### HealthReadyEndpointTests.cs (veritabanı sağlık testleri)
+
+Dosya: `tests/TedarikCore.IntegrationTests/HealthReadyEndpointTests.cs`. Aynı https istemci ayarını kullanır. "Veritabanı erişilemez" durumunu, test sırasında bağlantı dizesini port 1'e (orada kimse dinlemez) çeviren bellek içi bir ayarla yapar. Bu ayar User Secrets'taki gerçek bağlantı dizesinin önüne geçer; yani testler gerçek veritabanı açıkken de aynı sonucu verir ve gerçek veritabanına zarar vermez.
+
+1. `Get_Health_Returns200_Even_When_Database_Unreachable`: veritabanı erişilemezken `/health` yine `200 Healthy`. Korunan şey: yaşıyor mu kontrolü veritabanına bağlanmamalı.
+2. `Get_HealthReady_Returns503_When_Database_Unreachable`: veritabanı erişilemezken `/health/ready` `503` ve `Unhealthy`. Korunan şey: hazır değilken "hazır" dememek.
+3. `Get_HealthReady_Returns200_When_Database_Reachable`: gerçek PostgreSQL'e bağlanıp `200 Healthy` bekler. Bunu ancak gerçek veritabanı kanıtlayabilir, sahte (mock) kanıtlayamaz.
+   - `[RequiresDatabaseFact]` özel bir attribute'tür (`RequiresDatabaseFactAttribute.cs`): bağlantı dizesi (User Secrets veya ortam değişkeni) yoksa testi **atlar** (skip). Böylece veritabanı olmayan makinede test kırmızıya dönmez ama raporda "Skipped" olarak görünür, sessizce geçmiş gibi durmaz.
+
 ## 7. ProjectDependencyTests.cs
 
 Dosya: `tests/TedarikCore.UnitTests/ArchitectureTests/ProjectDependencyTests.cs`.
@@ -279,6 +325,13 @@ Yardımcı metodlar:
 
 Bu test bir keresinde Domain'e geçici olarak Api referansı yazılarak gerçekten kırmızıya döndüğü gösterildi, sonra geri alındı.
 
+### DependencyInjectionTests.cs (UnitTests/Infrastructure)
+
+Dosya: `tests/TedarikCore.UnitTests/Infrastructure/DependencyInjectionTests.cs`. Gerçek veritabanı ya da uygulama gerekmeden `AddInfrastructure` kaydını dener:
+
+1. `AddInfrastructure_Registers_AppDbContext_Without_Opening_Connection`: bağlantı dizesi varsa `AppDbContext` kayıt listesinden alınabilir. `DbContext` nesnesini oluşturmak bağlantı açmaz, o yüzden ağ kullanılmaz.
+2. `AppDbContext_Without_ConnectionString_Throws_Clear_Error`: bağlantı dizesi yoksa hata mesajı `ConnectionStrings:Default` ifadesini içerir. Bu yolu integration testte denemek zordur, çünkü User Secrets doluyken "yok" durumu oluşmaz.
+
 ---
 
 ## 8. Bir HTTP isteği bugün nasıl işleniyor? (`GET https://localhost:7189/health`)
@@ -288,10 +341,14 @@ Bu test bir keresinde Domain'e geçici olarak Api referansı yazılarak gerçekt
    - Yönlendirme (routing): adrese bakıp hangi endpoint'in eşleştiğini bulur. (`WebApplication` bunu otomatik ekler.)
    - `UseHttpsRedirection`: istek zaten https; geçer. (`http://localhost:5229/health` olsaydı burada 307 ile https'e gönderilirdi.)
    - `UseAuthorization`: endpoint'te yetki şartı yok; geçer.
-3. Eşleşen endpoint **sağlık kontrolü** (`MapHealthChecks("/health")`): kayıtlı kontrolleri çalıştırır. Hiç kontrol yok, sonuç `Healthy`.
+3. Eşleşen endpoint **sağlık kontrolü** (`MapHealthChecks("/health")`): `Predicate = _ => false` olduğu için hiçbir kontrolü çalıştırmaz; sonuç `Healthy`.
 4. Cevap **HTTP 200**, gövde `Healthy` (düz metin) olarak aynı hattan geri döner ve istemciye gider.
 
-Dikkat: bu akışta Domain, Application, Infrastructure ve controller **hiç çalışmıyor**. `/health` yalnızca Api içinde yaşıyor. İş mantığı olan bir istekte (ileride) akış şöyle olacak:
+`GET /health/ready` farkı: 3. adımda `ready` etiketli kontroller çalışır. `AppDbContext` DI listesinden alınır (bu sırada bağlantı dizesi okunur), PostgreSQL'e bağlanmayı dener:
+- Bağlanırsa: `200 Healthy`.
+- Bağlanamazsa ya da bağlantı dizesi yoksa: `503 Unhealthy`. Uygulama çökmez, `/health` etkilenmez.
+
+Dikkat: `/health` akışında Domain, Application, controller ve veritabanı **hiç çalışmıyor**. `/health/ready` ise Infrastructure'daki `AppDbContext`'e kadar iner; Domain ve Application yine devrede değildir. İş mantığı olan bir istekte (ileride) akış şöyle olacak:
 
 `Controller` → `Application` use case → (`Application`'daki interface) → `Infrastructure` gerçeklemesi (veritabanı) → `Domain` kuralları → cevap geri döner.
 
@@ -307,8 +364,9 @@ Aşağıdaki aşama sırası bir **öneridir**; kesin plan değildir. Her aşama
 
 | Eksik | Neden henüz yok | Eklenebileceği aşama (öneri) |
 |---|---|---|
-| Veritabanı (PostgreSQL) ve EF Core (`DbContext`, migration) | Bilerek ertelendi | Persistence aşaması; `Infrastructure/Persistence` bu iş için ayrıldı |
-| `/health` içinde veritabanı kontrolü | Veritabanı yok | Veritabanı ile birlikte |
+| EF Core **migration** ve tablolar (`DbSet`, entity) | Bilerek ertelendi; `AppDbContext` var ama içi boş, veritabanında henüz tablo yok | İlk modülle birlikte (öneri) |
+| Güvenli veritabanı kullanıcısı | Geliştirmede `postgres` yönetici kullanıcısı ve basit bir demo parolası kullanılıyor | Canlıya çıkmadan önce; ayrı, yetkisi sınırlı kullanıcı |
+| Test için ayrı veritabanı | Gerçek-DB testi şimdilik `tedarikcore_dev`'e bağlanıyor (yalnızca okuma/bağlanma) | Veri yazan ilk testlerden önce (öneri: `tedarikcore_test`) |
 | Domain kavramları (Product, Order, Inventory) | İş kuralı henüz tasarlanmadı | Veritabanından sonra ya da öncesinde; ilk modülle birlikte |
 | Saf unit testler | Test edilecek iş kuralı yok | İlk Domain/Application kuralı yazılırken |
 | Application use case'leri ve interface'ler (`Abstractions`) | İş kuralı yok | İlk modül |

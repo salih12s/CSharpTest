@@ -34,6 +34,16 @@ dotnet build TedarikCore.slnx
 dotnet run --project src/TedarikCore.Api --launch-profile http   # http://localhost:5229/health
 ```
 
+## Veritabanı (PostgreSQL)
+
+- Geliştirme veritabanı: `tedarikcore_dev` (yerel PostgreSQL 15, `localhost:5432`). Bilgisayardaki diğer veritabanlarına dokunulmaz.
+- Bağlantı dizesi (`ConnectionStrings:Default`) Git'e girmez. Her makinede bir kez:
+  `dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Port=5432;Database=tedarikcore_dev;Username=...;Password=..." --project src/TedarikCore.Api`
+  Alternatif: `ConnectionStrings__Default` ortam değişkeni (User Secrets'ın önüne geçer).
+- `GET /health` yalnızca uygulamanın ayakta olduğunu söyler, veritabanına bakmaz. `GET /health/ready` veritabanına gerçekten bağlanmayı dener (200 / 503).
+- Migration ve entity henüz yok; eklenmeden önce kullanıcıdan onay alınır.
+- Bağlantı dizesi yoksa uygulama açılır, yalnızca `/health/ready` 503 verir ve gerçek-DB testi `Skipped` görünür.
+
 ## Testler
 
 ```

@@ -30,14 +30,25 @@ Son güncelleme: 2026-10-21
 - Yalnızca `.gitkeep` içeren `Domain/Common` ve `Api/Middleware` klasörleri kaldırıldı. `Application/Abstractions`, `Infrastructure/Persistence` ve `Api/Controllers` korundu.
 - Kod, `.csproj` ve ProjectReference bağlantılarına dokunulmadı.
 
+### ADIM 04 — PostgreSQL ve EF Core (`feature/adim-04-efcore` dalı)
+- Yerel PostgreSQL 15.6 çalışıyor; `tedarikcore_dev` veritabanı oluşturuldu (mevcut diğer veritabanlarına dokunulmadı).
+- `Infrastructure`: `AppDbContext` (boş), `AddInfrastructure(services, configuration)` ile EF Core + Npgsql kaydı, `HealthCheckTags`.
+- Bağlantı dizesi User Secrets'ta (`ConnectionStrings:Default`); Git'e girmedi. Api `.csproj`'a `UserSecretsId` eklendi.
+- `GET /health` (yalnızca ayakta mı, DB'ye bakmaz) ve `GET /health/ready` (gerçek PostgreSQL kontrolü: 200 / 503).
+- Paketler: Npgsql.EntityFrameworkCore.PostgreSQL 10.0.3, Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore 10.0.12 (EF Core 10.0.12 buradan gelir). Test: Microsoft.Extensions.Configuration 10.0.12, Microsoft.Extensions.Configuration.UserSecrets 10.0.12.
+- Testler 10 → 15: DB erişilemezken `/health` 200 ve `/health/ready` 503, bağlantı dizesi yokken net hata, gerçek DB ile `/health/ready` 200 (DB yoksa `Skipped`).
+- Migration, entity ve iş modülleri yapılmadı (kapsam dışı).
+
 ## Bilinen eksikler
 - Saf unit test yok: henüz test edilecek Domain/Application mantığı bulunmuyor. UnitTests şimdilik yalnızca mimari testi içeriyor.
-- `/health` yalnızca "uygulama ayakta" der; veritabanı kontrolü yok (DB henüz yok).
+- Geliştirme bağlantısı `postgres` yönetici kullanıcısı ve basit bir demo parolasıyla kuruldu (kullanıcı kararı: canlıya çıkılmayacak demo). Canlı kullanımdan önce yetkisi sınırlı ayrı bir kullanıcı gerekir.
+- Gerçek-DB testi `tedarikcore_dev`'e bağlanıyor (yalnızca bağlantı denemesi). Veri yazan testlerden önce ayrı test veritabanı gerekir.
+- `tedarikcore_dev` boş: tablo yok, migration yok.
 - CI bilerek yok (karar: yalnızca yerel test); testlerin çalıştırılması geliştiricinin sorumluluğunda.
 - Coverage ölçümü kurulmadı (`coverlet.collector` pakete dahil ama kullanılmıyor).
 
 ## Sırada
-- ADIM 04 (kullanıcı onayı bekleniyor).
+- ADIM 05 (kullanıcı onayı bekleniyor). `feature/adim-04-efcore` dalı henüz push/merge edilmedi.
 
 ## Kapsam dışı (henüz yapılmadı)
-PostgreSQL, EF Core migration, Authentication/JWT, Product/Order/Inventory iş mantığı, React frontend, Docker/deployment.
+EF Core migration/entity, Authentication/JWT, Product/Order/Inventory iş mantığı, React frontend, Docker/deployment.

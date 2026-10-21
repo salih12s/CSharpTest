@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using TedarikCore.Application;
 using TedarikCore.Infrastructure;
 
@@ -6,7 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 
 builder.Services.AddApplication();
-builder.Services.AddInfrastructure();
+builder.Services.AddInfrastructure(builder.Configuration);
 
 builder.Services.AddControllers();
 builder.Services.AddHealthChecks();
@@ -26,7 +27,13 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapHealthChecks("/health");
+// /health: yalnızca uygulama ayakta mı (veritabanı kontrolü çalışmaz).
+app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = _ => false });
+// /health/ready: bağımlılıklar (veritabanı) hazır mı.
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains(HealthCheckTags.Ready)
+});
 
 app.Run();
 
