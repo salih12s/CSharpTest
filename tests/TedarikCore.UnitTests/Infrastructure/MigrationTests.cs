@@ -18,12 +18,46 @@ public class MigrationTests
     }
 
     [Fact]
-    public void InitialCatalog_Migration_Exists_And_IsTheOnlyMigration()
+    public void Migrations_AreInitialCatalog_Then_EnforceUppercaseSku_InOrder()
     {
         using var context = CreateContext();
 
-        var migration = Assert.Single(context.Database.GetMigrations());
-        Assert.EndsWith("_InitialCatalog", migration);
+        var migrations = context.Database.GetMigrations().ToList();
+
+        Assert.Equal(2, migrations.Count);
+        Assert.EndsWith("_InitialCatalog", migrations[0]);
+        Assert.EndsWith("_EnforceUppercaseSku", migrations[1]);
+    }
+
+    [Fact]
+    public void EnforceUppercaseSku_Up_OnlyAddsUppercaseCheck_OnProducts()
+    {
+        var operations = new EnforceUppercaseSku().UpOperations;
+
+        var add = Assert.IsType<AddCheckConstraintOperation>(Assert.Single(operations));
+        Assert.Equal("ck_products_sku_uppercase", add.Name);
+        Assert.Equal("products", add.Table);
+        Assert.Equal("sku = upper(sku)", add.Sql);
+    }
+
+    [Fact]
+    public void EnforceUppercaseSku_Down_OnlyDropsItsOwnCheck_NotTheTable()
+    {
+        var operations = new EnforceUppercaseSku().DownOperations;
+
+        var drop = Assert.IsType<DropCheckConstraintOperation>(Assert.Single(operations));
+        Assert.Equal("ck_products_sku_uppercase", drop.Name);
+        Assert.Equal("products", drop.Table);
+    }
+
+    [Fact]
+    public void InitialCatalog_WasNotRewritten_ItStillHasOnlyThePriceCheck()
+    {
+        // InitialCatalog test veritabanına uygulandı; değiştirilmemeli. Yeni kural yalnızca yeni migration'dadır.
+        var table = Assert.Single(new InitialCatalog().UpOperations.OfType<CreateTableOperation>());
+
+        var check = Assert.Single(table.CheckConstraints);
+        Assert.Equal("ck_products_price_kurus_positive", check.Name);
     }
 
     [Fact]

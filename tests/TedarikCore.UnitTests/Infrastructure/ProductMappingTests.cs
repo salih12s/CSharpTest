@@ -84,16 +84,18 @@ public class ProductMappingTests
     }
 
     [Fact]
-    public void Products_Table_HasCheck_PriceKurus_GreaterThanZero()
+    public void Products_Table_HasCheck_PriceKurus_GreaterThanZero_And_Sku_Uppercase()
     {
         using var context = CreateContext();
         var table = context.GetService<IDesignTimeModel>().Model
             .GetRelationalModel()
             .FindTable("products", null)!;
 
-        var check = Assert.Single(table.CheckConstraints);
-        Assert.Equal("ck_products_price_kurus_positive", check.Name);
-        Assert.Equal("price_kurus > 0", check.Sql);
+        var checks = table.CheckConstraints.ToDictionary(c => c.Name!, c => c.Sql);
+
+        Assert.Equal(2, checks.Count);
+        Assert.Equal("price_kurus > 0", checks["ck_products_price_kurus_positive"]);
+        Assert.Equal("sku = upper(sku)", checks["ck_products_sku_uppercase"]);
     }
 
     [Fact]

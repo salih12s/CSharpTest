@@ -4,6 +4,7 @@ namespace TedarikCore.IntegrationTests.Database;
 
 // Migration'ın tedarikcore_test üzerinde gerçekten oluşturduğu yapıları sistem kataloglarından okur.
 // Salt-okunurdur; migration uygulamaz. Migration uygulanmamışsa bu testler Failed olur (bilerek).
+[Collection(PostgresTestCollection.Name)]
 public class ProductSchemaPostgresTests
 {
     private static async Task<List<string>> QueryAsync(NpgsqlConnection connection, string sql)
@@ -52,7 +53,7 @@ public class ProductSchemaPostgresTests
     }
 
     [RequiresTestDatabaseFact]
-    public async Task Products_HasPrimaryKey_UniqueSkuIndex_And_PositivePriceCheck()
+    public async Task Products_HasPrimaryKey_UniqueSkuIndex_PositivePriceCheck_And_UppercaseSkuCheck()
     {
         await using var connection = await PostgresTestDatabase.OpenVerifiedConnectionAsync();
 
@@ -63,18 +64,32 @@ public class ProductSchemaPostgresTests
             "select indexname || ' ' || indexdef from pg_indexes where tablename = 'products' order by indexname");
 
         Assert.Contains("ck_products_price_kurus_positive CHECK ((price_kurus > 0))", constraints);
+        Assert.Contains("ck_products_sku_uppercase CHECK (((sku)::text = upper((sku)::text)))", constraints);
         Assert.Contains("pk_products PRIMARY KEY (id)", constraints);
+        Assert.Equal(3, constraints.Count); // başka beklenmeyen kısıt yok
         Assert.Contains(indexes, i => i.StartsWith("ix_products_sku ") && i.Contains("CREATE UNIQUE INDEX") && i.Contains("(sku)"));
     }
 
     [RequiresTestDatabaseFact]
-    public async Task MigrationHistory_ContainsInitialCatalog()
+    public async Task MigrationHistory_ContainsInitialCatalog_And_EnforceUppercaseSku_InOrder()
     {
         await using var connection = await PostgresTestDatabase.OpenVerifiedConnectionAsync();
 
         var applied = await QueryAsync(connection, "select \"MigrationId\" from \"__EFMigrationsHistory\" order by 1");
 
-        var only = Assert.Single(applied);
-        Assert.EndsWith("_InitialCatalog", only);
+        Assert.Equal(2, applied.Count);
+        Assert.EndsWith("_InitialCatalog", applied[0]);
+        Assert.EndsWith("_EnforceUppercaseSku", applied[1]);
+    }
+
+    [RequiresTestDatabaseFact]
+    public async Task Products_Table_HasNoLeftoverRows_AfterTests()
+    {
+        // Veri izolasyonunun kanıtı: testler (rollback ve tam-SKU temizliği) tabloda satır bırakmamalı.
+        await using var connection = await PostgresTestDatabase.OpenVerifiedConnectionAsync();
+
+        var rows = await QueryAsync(connection, "select sku from products order by sku limit 20");
+
+        Assert.Empty(rows);
     }
 }

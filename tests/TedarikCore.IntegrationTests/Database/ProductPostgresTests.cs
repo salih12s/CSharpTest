@@ -11,6 +11,7 @@ namespace TedarikCore.IntegrationTests.Database;
 // Veri izolasyonu: her test benzersiz bir SKU kullanır ve yazdıklarını açık bir transaction içinde
 // yapıp hiç commit etmeden geri alır (rollback). Tek istisna eşzamanlılık testidir (iki ayrı bağlantı
 // commit gerektirir); o test yazdığı satırları benzersiz SKU ile bulup siler.
+[Collection(PostgresTestCollection.Name)]
 public class ProductPostgresTests
 {
     private static string UniqueSku(string label) => $"T06-{label}-{Guid.NewGuid():N}".ToUpperInvariant();
@@ -169,61 +170,122 @@ public class ProductPostgresTests
         Assert.Equal("23514", ex.SqlState);
     }
 
-    // DAVRANIŞ BELGELEME (şema değişikliği yapılmadı): unique index büyük/küçük harfe duyarlıdır.
-    // Domain SKU'yu büyük harfe çevirdiği için Product.Create ile bu durum oluşmaz; ancak ham SQL
-    // aynı SKU'yu farklı harf büyüklüğüyle ikinci kez ekleyebilir. Bkz. DECISIONS 023.
+    // ADIM 06'da bu test "indeks harf büyüklüğüne duyarlı, küçük harfli kopya EKLENEBİLİYOR" davranışını
+    // belgeliyordu. ck_products_sku_uppercase (EnforceUppercaseSku migration'ı) ile artık reddedilir.
     [RequiresTestDatabaseFact]
-    public async Task Sku_UniqueIndex_IsCaseSensitive_AtDatabaseLevel()
+    public async Task Sku_LowercaseVariantOfExistingSku_IsRejected_ByUppercaseCheck()
     {
         await using var connection = await PostgresTestDatabase.OpenVerifiedConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
-        var suffix = Guid.NewGuid().ToString("N");
+        var suffix = Guid.NewGuid().ToString("N").ToUpperInvariant();
 
-        await InsertRawAsync(connection, transaction, $"T06-HARF-{suffix}".ToUpperInvariant(), 100);
-        var secondInsert = await InsertRawAsync(connection, transaction, $"t06-harf-{suffix}", 100);
+        var first = await InsertRawAsync(connection, transaction, $"T07-HARF-{suffix}", 100);
+        var ex = await Assert.ThrowsAsync<PostgresException>(
+            () => InsertRawAsync(connection, transaction, $"t07-harf-{suffix}", 100));
 
-        Assert.Equal(1, secondInsert); // reddedilmedi: "ABC" ile "abc" ayrı SKU sayıldı
+        Assert.Equal(1, first);
+        Assert.Equal("23514", ex.SqlState);
+        Assert.Equal("ck_products_sku_uppercase", ex.ConstraintName);
+    }
+
+    // Kontrol çifti: aynı karakterlerin BÜYÜK harfli hâli kabul edilir (red nedeni yalnızca küçük harf).
+    [RequiresTestDatabaseTheory]
+    [InlineData("T07-ABC")]
+    [InlineData("T07-ÖLÇÜŞĞ")]
+    public async Task RawSql_UppercaseSku_Succeeds_Control(string skuBase)
+    {
+        await using var connection = await PostgresTestDatabase.OpenVerifiedConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        var inserted = await InsertRawAsync(
+            connection, transaction, $"{skuBase}-{Guid.NewGuid():N}".ToUpperInvariant(), 100);
+
+        Assert.Equal(1, inserted);
+    }
+
+    [RequiresTestDatabaseTheory]
+    [InlineData("t07-abc")] // tamamen küçük ASCII
+    [InlineData("T07-Abc")] // karışık harf
+    [InlineData("T07-ÖLÇÜşğ")] // Türkçe küçük harfler (ş, ğ)
+    [InlineData("T07-ölçü")] // tamamen küçük Türkçe
+    public async Task RawSql_SkuWithLowercaseLetters_FailsWith_23514_UppercaseCheck(string skuBase)
+    {
+        await using var connection = await PostgresTestDatabase.OpenVerifiedConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        // Sonekin harfleri BÜYÜK: red yalnızca skuBase içindeki küçük harften gelir.
+        var sku = skuBase + "-" + Guid.NewGuid().ToString("N").ToUpperInvariant();
+
+        var ex = await Assert.ThrowsAsync<PostgresException>(() => InsertRawAsync(connection, transaction, sku, 100));
+
+        Assert.Equal("23514", ex.SqlState);
+        Assert.Equal("ck_products_sku_uppercase", ex.ConstraintName);
+    }
+
+    // Product.Create'in ürettiği SKU'lar (özellikle Türkçe karakterli olanlar) CHECK tarafından
+    // reddedilmemeli: C# ToUpperInvariant ile PostgreSQL upper() uyumunun gerçek veritabanı kanıtı.
+    [RequiresTestDatabaseTheory]
+    [InlineData("abc-1")]
+    [InlineData("kalem-i")]
+    [InlineData("ışık-öğe-çüş")]
+    [InlineData("İSTANBUL-ı")]
+    [InlineData("straße-01")]
+    [InlineData("çiğdem")]
+    [InlineData("ǆ-ǅ")]
+    [InlineData("ﬁ-ligatur")]
+    public async Task ProductCreate_NormalizedSkus_AreAccepted_By_UppercaseCheck(string skuBase)
+    {
+        await using var connection = await PostgresTestDatabase.OpenVerifiedConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using var context = CreateContext(connection, transaction);
+        var product = Product.Create($"{skuBase}-{Guid.NewGuid():N}", "Test", 100);
+
+        context.Products.Add(product);
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var loaded = await context.Products.SingleAsync(p => p.Id == product.Id);
+        Assert.Equal(product.Sku, loaded.Sku);
+        Assert.Equal(product.Sku, product.Sku.ToUpperInvariant());
     }
 
     [RequiresTestDatabaseFact]
     public async Task ConcurrentInserts_OfSameSku_ExactlyOneWins_Other_Gets23505()
     {
         var sku = UniqueSku("yaris");
-        await using var first = await PostgresTestDatabase.OpenVerifiedConnectionAsync();
-        await using var second = await PostgresTestDatabase.OpenVerifiedConnectionAsync();
-        try
-        {
-            // İki ayrı bağlantı, otomatik commit: gerçekten eşzamanlı iki istek gibi.
-            using var gate = new ManualResetEventSlim(false);
-            Task<Exception?> Insert(NpgsqlConnection connection) => Task.Run(async () =>
-            {
-                gate.Wait();
-                try
-                {
-                    await InsertRawAsync(connection, null, sku, 100);
-                    return (Exception?)null;
-                }
-                catch (Exception e)
-                {
-                    return e;
-                }
-            });
-            var tasks = new[] { Insert(first), Insert(second) };
-            gate.Set();
-            var results = await Task.WhenAll(tasks);
 
-            var failures = results.Where(r => r is not null).ToList();
-            Assert.Single(failures);
-            Assert.Equal("23505", Assert.IsType<PostgresException>(failures[0]).SqlState);
-            Assert.Equal(1, await CountBySkuPrefixAsync(first, null, sku));
-        }
-        finally
-        {
-            // Güvenli temizlik: yalnızca bu testin benzersiz SKU'su silinir (bağlantı tedarikcore_test).
-            await using var cleanup = new NpgsqlCommand("delete from products where sku = @sku", first);
-            cleanup.Parameters.AddWithValue("sku", sku);
-            await cleanup.ExecuteNonQueryAsync();
-        }
+        // Test gövdesi ne olursa olsun temizlik taze bir bağlantıyla ve yalnızca bu TAM SKU için çalışır;
+        // temizlik hatası da asıl test hatası da kaybolmaz (bkz. RunWithCleanupAsync).
+        await PostgresTestDatabase.RunWithCleanupAsync(
+            async () =>
+            {
+                await using var first = await PostgresTestDatabase.OpenVerifiedConnectionAsync();
+                await using var second = await PostgresTestDatabase.OpenVerifiedConnectionAsync();
+
+                // İki ayrı bağlantı, otomatik commit: gerçekten eşzamanlı iki istek gibi.
+                using var gate = new ManualResetEventSlim(false);
+                Task<Exception?> Insert(NpgsqlConnection connection) => Task.Run(async () =>
+                {
+                    gate.Wait();
+                    try
+                    {
+                        await InsertRawAsync(connection, null, sku, 100);
+                        return (Exception?)null;
+                    }
+                    catch (Exception e)
+                    {
+                        return e;
+                    }
+                });
+                var tasks = new[] { Insert(first), Insert(second) };
+                gate.Set();
+                var results = await Task.WhenAll(tasks);
+
+                var failures = results.Where(r => r is not null).ToList();
+                Assert.Single(failures);
+                Assert.Equal("23505", Assert.IsType<PostgresException>(failures[0]).SqlState);
+                Assert.Equal(1, await CountBySkuPrefixAsync(first, null, sku));
+            },
+            () => PostgresTestDatabase.DeleteProductBySkuAsync(sku));
     }
 
     [RequiresTestDatabaseFact]
