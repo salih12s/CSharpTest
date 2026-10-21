@@ -62,7 +62,7 @@ Neden Application, Infrastructure'ı bilmiyor? Application "bana ürünleri kayd
 | `src/TedarikCore.Domain/Catalog` | Domain | "Catalog" = ürün kataloğu. Ürünle ilgili iş kuralları burada; veritabanını ya da web'i bilmez. |
 | `src/TedarikCore.Infrastructure/Persistence` | Infrastructure | "Persistence" = verinin kalıcı saklanması. Veritabanı erişim kodu burada: `AppDbContext.cs`. |
 | `src/TedarikCore.Infrastructure/Persistence/Configurations` | Infrastructure | Her entity'nin tablo eşlemesi (hangi kolon, hangi tür, hangi indeks). Tablo detayı Domain'e sızmasın diye burada. |
-| `src/TedarikCore.Infrastructure/Persistence/Migrations` | Infrastructure | **Migration** = veritabanının şemasını adım adım değiştiren, EF Core'un ürettiği dosyalar. Şu an tek dosya: `InitialCatalog` (**yalnızca `tedarikcore_test`'e uygulandı**; `tedarikcore_dev` hâlâ boş). |
+| `src/TedarikCore.Infrastructure/Persistence/Migrations` | Infrastructure | **Migration** = veritabanının şemasını adım adım değiştiren, EF Core'un ürettiği dosyalar. Şu an iki migration: `InitialCatalog` ve `EnforceUppercaseSku`. İkisi de **yalnızca `tedarikcore_test`'e uygulandı**; `tedarikcore_dev` hâlâ boş. |
 | `tests/TedarikCore.UnitTests` | Test | Hızlı testler; uygulama ayağa kalkmaz. |
 | `tests/TedarikCore.IntegrationTests` | Test | Uygulamayı bellekte ayağa kaldırıp HTTP ile deneyen testler. |
 | `docs/` | — | Proje belgeleri (durum, kararlar, bu rehber). |
@@ -368,8 +368,8 @@ Aşağıdaki aşama sırası bir **öneridir**; kesin plan değildir. Her aşama
 
 | Eksik | Neden henüz yok | Eklenebileceği aşama (öneri) |
 |---|---|---|
-| `InitialCatalog` migration'ının `tedarikcore_dev`'e **uygulanması** | `tedarikcore_test`'e uygulandı ve doğrulandı; `tedarikcore_dev` bilerek hâlâ boş (0 tablo), onay bekliyor | Kullanıcı onayından sonra |
-| SKU harf büyüklüğü duyarlılığı | Unique index `ABC` ile `abc`'yi ayrı sayıyor (yalnızca Domain'i atlayan yazıcılar için risk); şema değişmedi | Karar verilirse yeni migration (bkz. DECISIONS 023) |
+| İki migration'ın (`InitialCatalog`, `EnforceUppercaseSku`) `tedarikcore_dev`'e **uygulanması** | `tedarikcore_test`'e uygulandı ve doğrulandı; `tedarikcore_dev` bilerek hâlâ boş (0 tablo), onay bekliyor | Kullanıcı onayından sonra |
+| SKU harf büyüklüğünde kalan boşluk | `ck_products_sku_uppercase` ASCII ve Türkçe harfleri tam korur; PostgreSQL'in büyütmediği ~478 egzotik karakteri (ör. `ý`, `µ`) ham SQL'de küçük harf olarak geçirebilir (bkz. DECISIONS 026) | Gerekirse `upper(sku)` üzerinde unique index (yeni migration) |
 | Ürün için uygulama kodu (repository, servis) ve API | Bu aşamalarda yapılmadı | Application katmanı ve ilk endpoint'lerle |
 | Güvenli veritabanı kullanıcısı | Geliştirmede ve testlerde `postgres` yönetici kullanıcısı ve basit bir demo parolası kullanılıyor | Canlıya çıkmadan önce; ayrı, yetkisi sınırlı kullanıcı |
 | Test altyapısı dayanıklılığı | Hata durumunda test bağlantısının dispose edilmesi ve eşzamanlılık testinin temizliği iyileştirilecek (ayrıntı: `PROJECT_STATUS.md` "Sonraki teknik iyileştirmeler") | Bir sonraki uygun adımda |
@@ -418,21 +418,23 @@ Bir ürünü ve onun değişmez kurallarını tarif eder. Veritabanını, web'i 
 | `Sku` | `sku character varying(64) NOT NULL` + **unique index** `ix_products_sku` |
 | `Name` | `name character varying(200) NOT NULL` |
 | `PriceKurus` | `price_kurus bigint NOT NULL` + **CHECK kısıtı** `ck_products_price_kurus_positive`: `price_kurus > 0` |
+| `Sku` (ek kural) | **CHECK kısıtı** `ck_products_sku_uppercase`: `sku = upper(sku)`. Domain zaten büyük harfe çevirir; bu, Domain'i atlayan ham SQL'e karşı ikinci savunma hattıdır. |
 | `IsActive` | `is_active boolean NOT NULL` |
 
 Uzunluk sınırları `Product.MaxSkuLength` ve `Product.MaxNameLength` sabitlerinden gelir: kural tek yerde durur, Domain ile veritabanı ayrışamaz.
 
 ### Migration (`Persistence/Migrations`)
 - **Ne yapar:** Veritabanı şemasını koddan üretilen adımlarla değiştirir. `InitialCatalog` yalnızca `products` tablosunu (içinde birincil anahtar ve **CHECK** kısıtı), `ix_products_sku` indeksini oluşturur (SQL'i `CREATE TABLE`, `CREATE UNIQUE INDEX` ve bir geçmiş kaydı ekler; `DROP`/`DELETE`/`ALTER` yoktur). **CHECK kısıtı** = tabloya her satır eklenirken/güncellenirken veritabanının kontrol ettiği kural; `price_kurus > 0` olmayan satırı Domain'i atlayan bir yol bile ekleyemez.
+- **İkinci migration `EnforceUppercaseSku`:** yalnızca `ALTER TABLE products ADD CONSTRAINT ck_products_sku_uppercase CHECK (sku = upper(sku))` çalıştırır (ve geçmiş kaydı ekler). `InitialCatalog` test veritabanına uygulandığı için artık **değiştirilmez**; yeni kural yeni bir migration olarak geldi. `ADD CONSTRAINT` tablodaki mevcut satırları da doğrular: küçük harfli bir satır varsa migration tümüyle geri alınır.
 - **Dosyalar:** `..._InitialCatalog.cs` (uygula: `Up`; geri al: `Down`), `.Designer.cs` (EF'in iç kaydı), `AppDbContextModelSnapshot.cs` (modelin son hâlinin fotoğrafı; bir sonraki migration "ne değişti" farkını bununla bulur).
 - **Uygulama durumu:** Yalnızca `tedarikcore_test` veritabanına, kullanıcı onayıyla uygulandı ve tablo/kısıt/indeks PostgreSQL'den okunarak doğrulandı. `tedarikcore_dev` **hâlâ boş**.
 - **Güvenlik önlemi:** Migration üretilirken bağlantı, kimsenin dinlemediği bir adrese çevrilir; araç yanlışlıkla gerçek veritabanına bağlansa bile bağlanamaz.
 
 ### Yeni testler (UnitTests)
 - `Domain/Catalog/ProductTests.cs` (28 test): geçerli ürün, boş SKU/ad (`null`, `""`, boşluk), SKU kırpma ve büyük harf, **sınır değerleri** (tam 64/200 geçer, 65/201 reddedilir, uzunluk kırpmadan sonra ölçülür), sıfır/negatif/`long.MinValue` fiyat reddi, en küçük (1) ve en büyük (`long.MaxValue`) fiyat, geçerli ve geçersiz `ChangePrice` (geçersizde eski fiyat korunur), public setter olmaması, Türkçe kültürde SKU. Hepsi saf; DB ve ağ yok.
-- `Infrastructure/ProductMappingTests.cs` (11 test): `AppDbContext`'in **modelini** veritabanına bağlanmadan kurar ve tablo, kolon adları, `uuid`/`bigint`/`boolean` türleri, unique index, uzunluklar ve CHECK kısıtının adı ile ifadesini kontrol eder. Bağlantı dizesi bilerek ulaşılamaz bir adrestir.
+- `Infrastructure/ProductMappingTests.cs` (11 test): `AppDbContext`'in **modelini** veritabanına bağlanmadan kurar ve tablo, kolon adları, `uuid`/`bigint`/`boolean` türleri, unique index, uzunluklar ve iki CHECK kısıtının adı ile ifadesini kontrol eder. Bağlantı dizesi bilerek ulaşılamaz bir adrestir.
 - `Infrastructure/MigrationTests.cs` (5 test), hiçbiri veritabanına bağlanmaz:
-  1. `InitialCatalog` var ve tek migration.
+  1. Migration sırası: `InitialCatalog`, sonra `EnforceUppercaseSku`. Ayrıca `EnforceUppercaseSku.Up` yalnızca o CHECK'i ekler, `Down` yalnızca onu kaldırır ve `InitialCatalog` yeniden yazılmamıştır.
   2. Model ile migration fotoğrafı (snapshot) uyuşuyor mu. Biri entity'yi değiştirip migration'ı güncellemeyi unutursa kırılır.
   3. `Up` yalnızca `products` tablosunu (CHECK ile) ve `ix_products_sku` unique indeksini oluşturuyor.
   4. `Up` içinde `CreateTable`/`CreateIndex` dışında hiçbir işlem (silme, ham SQL vb.) yok.
@@ -457,7 +459,7 @@ Uzunluk sınırları `Product.MaxSkuLength` ve `Product.MaxNameLength` sabitleri
 - Yazma, **commit edilmeyen bir transaction** içinde yapılır; test bitince **rollback** olur ve tabloda kalıntı kalmaz.
 - Tek istisna eşzamanlılık testidir: iki ayrı bağlantı gerçekten commit etmek zorundadır. O test kendi SKU'sunu `finally` içinde silerek temizler.
 
-### Ne test ediliyor? (`ProductPostgresTests`, 11 test)
+### Ne test ediliyor? (`ProductPostgresTests`)
 | Test | Beklenen |
 |---|---|
 | Geçerli ürünü yaz ve geri oku | Aynı değerler okunur (ad kırpılmış) |
@@ -467,14 +469,27 @@ Uzunluk sınırları `Product.MaxSkuLength` ve `Product.MaxNameLength` sabitleri
 | Ham SQL, fiyat `1` (kontrol) | Başarılı: aşağıdaki hataların sebebinin yalnızca fiyat olduğunu gösterir |
 | Ham SQL, fiyat `0` ve `-1` | PostgreSQL **`23514`** (check violation), kısıt `ck_products_price_kurus_positive` |
 | Ham SQL, fiyatı `0`'a güncelle | `23514` |
-| `ABC` ve `abc` (ham SQL) | **İkisi de eklenir**: indeks harf büyüklüğüne duyarlı (davranış belgelendi, bkz. DECISIONS 023) |
+| Aynı SKU'nun küçük harfli kopyası (ham SQL) | PostgreSQL **`23514`**, kısıt `ck_products_sku_uppercase` (ADIM 06'da eklenebiliyordu, bkz. DECISIONS 023 ve 026) |
+| Ham SQL `T07-abc`, `T07-Abc`, `T07-ÖLÇÜşğ`, `T07-ölçü` | `23514` (BÜYÜK harfli kontrol çifti kabul edilir: red yalnızca küçük harften) |
+| `Product.Create` ile `kalem-i`, `ışık-öğe-çüş`, `İSTANBUL-ı`, `straße-01`, `ﬁ-ligatur` vb. | Kaydedilir ve geri okunur: C# `ToUpperInvariant` ile PostgreSQL `upper()` uyumlu |
 | İki bağlantı aynı SKU'yu aynı anda ekler | Tam biri kazanır, diğeri `23505` alır (**race** durumu) |
 | Transaction geri alınır | Satır kalmaz (izolasyon yönteminin kanıtı) |
 
 **Neden "ham SQL"?** `Product.Create` zaten sıfır ya da negatif fiyatı reddeder. Veritabanı kısıtı, Domain'i **atlayan** bir yolun (elle SQL, toplu aktarım, başka bir servis) da engellendiğini göstermek içindir: iki savunma hattı.
 
 ### Şema doğrulaması (`ProductSchemaPostgresTests`, 4 test)
-Migration'ın gerçekten oluşturduğu yapıları PostgreSQL sistem kataloglarından okur: yalnızca `products` ve `__EFMigrationsHistory` tabloları, kolon türleri ve `NOT NULL` durumları, `pk_products`, `ix_products_sku` (UNIQUE), `ck_products_price_kurus_positive` (`CHECK ((price_kurus > 0))`) ve geçmişte `InitialCatalog` kaydı. Migration uygulanmamışsa bu testler bilerek Failed olur (`42P01`).
+Migration'ın gerçekten oluşturduğu yapıları PostgreSQL sistem kataloglarından okur: yalnızca `products` ve `__EFMigrationsHistory` tabloları, kolon türleri ve `NOT NULL` durumları, `pk_products`, `ix_products_sku` (UNIQUE), `ck_products_price_kurus_positive` (`CHECK ((price_kurus > 0))`) `ck_products_sku_uppercase` (`CHECK (((sku)::text = upper((sku)::text)))`), geçmişte iki migration kaydı ve testler sonrası `products` tablosunda **0 satır**. Migration uygulanmamışsa bu testler bilerek Failed olur.
 
 ### Test veritabanını hazırlama
 Testler migration **uygulamaz**. Test veritabanı bir kez, kullanıcı onayıyla hazırlanır (komut ve güvenceler `CLAUDE.md`'de). Migration'ı uygulamadan önce testler `42P01: relation "products" does not exist` ile kırmızıydı; uyguladıktan sonra yeşile döndü.
+
+### SKU kuralı uyumluluğu: C# ile PostgreSQL aynı büyük harfi üretiyor mu?
+`sku = upper(sku)` kuralını iki ayrı motor uygular: C# `ToUpperInvariant()` (Domain) ve PostgreSQL `upper()` (veritabanı). Biri bir karakteri diğerinden farklı büyütürse geçerli bir ürün reddedilebilirdi. Bu yüzden kural eklenmeden önce Unicode'un **1.112.063 kod noktasının tamamı** karşılaştırıldı (`SkuUppercaseCompatibilityPostgresTests`, salt-okunur, kalıcı test olarak duruyor):
+- C# çıktısı PostgreSQL'de her zaman "zaten büyük": `i, I, İ, ı, ö, Ö, ş, ğ, ü, ç, ß` ve örnek SKU'lar dahil **0 uyumsuzluk**.
+- Ters yön tam değil: PostgreSQL (Windows `Turkish_Türkiye.1254` kolasyonu) 478 egzotik küçük harfi büyütmez (ör. `ý`, `µ`, Yunan `ς`) ve `ÿ`'yi kontrol karakteri U+009F'ye çevirir. Yani CHECK ham SQL'e karşı ASCII ve Türkçe harflerde tam, bu egzotik harflerde eksik korumadır.
+- Sonuç sunucunun yerel ayarına bağlıdır; başka bir sunucuda aynı test uyumsuzluğu gösterirse kural gözden geçirilmelidir.
+
+### Test altyapısının güvenilirliği (`PostgresTestDatabaseSafetyTests`, DB'siz)
+- Bağlantı doğrulama hata verirse (açılamıyor, veritabanı yanlış, `current_database()` hata veriyor) bağlantı **dispose edilir** ve hata aynen fırlatılır.
+- Eşzamanlılık testinin temizliği `RunWithCleanupAsync` ile yapılır: yalnızca test başarısızsa asıl hata (türü ve izi korunarak) çıkar; yalnızca temizlik başarısızsa temizlik hatası çıkar; ikisi de başarısızsa ikisi birden `AggregateException` içinde görünür. Temizlik taze doğrulanmış bir bağlantıyla yalnızca **tam SKU** için `delete` çalıştırır, ardından satır kalmadığını doğrular. Joker (`T06-%` gibi) silme yoktur.
+- Veritabanına dokunan testler aynı xUnit koleksiyonunda sırayla çalışır; böylece eşzamanlılık testinin geçici satırı "tabloda kalıntı yok" kontrolüyle yarışmaz.

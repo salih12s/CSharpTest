@@ -9,7 +9,10 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
     public void Configure(EntityTypeBuilder<Product> builder)
     {
         builder.ToTable("products", table =>
-            table.HasCheckConstraint("ck_products_price_kurus_positive", "price_kurus > 0"));
+        {
+            table.HasCheckConstraint("ck_products_price_kurus_positive", "price_kurus > 0");
+            table.HasCheckConstraint("ck_products_sku_uppercase", "sku = upper(sku)");
+        });
 
         builder.HasKey(p => p.Id).HasName("pk_products");
         builder.Property(p => p.Id)

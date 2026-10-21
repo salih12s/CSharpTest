@@ -20,7 +20,7 @@ docs/
 ## Domain kuralları
 - Para **kuruş** cinsinden `long` tutulur (`PriceKurus`); `decimal`/`double` kullanılmaz.
 - Entity'lerin setter'ları `private`; nesne `Create(...)` fabrikasıyla doğrulanarak oluşur. EF Core için `private` parametresiz constructor bulunur.
-- Benzersizlik (ör. SKU) tek bir nesneyle doğrulanamaz; veritabanı unique index'i korur.
+- Benzersizlik (ör. SKU) tek bir nesneyle doğrulanamaz; veritabanı unique index'i korur. SKU büyük harf kuralı (`sku = upper(sku)`) hem Domain'de (`ToUpperInvariant`) hem veritabanında CHECK olarak vardır; PostgreSQL yerel ayarı değişirse `SkuUppercaseCompatibilityPostgresTests` ile uyumluluk yeniden ölçülür.
 - Domain projesine EF Core, Npgsql ya da başka paket eklenmez.
 
 ## Bağımlılık yönü
@@ -58,6 +58,8 @@ dotnet run --project src/TedarikCore.Api --launch-profile http   # http://localh
     dotnet ef migrations script --project src/TedarikCore.Infrastructure --startup-project src/TedarikCore.Api --no-build -o <dosya>.sql
     ```
   - Entity/eşleme değişince yeni migration üretmeyi unutma; `MigrationTests` model ile snapshot uyuşmazlığını yakalar.
+  - Bir veritabanına **uygulanmış** migration değiştirilmez, silinmez, yeniden üretilmez; değişiklik her zaman yeni migration olur (ör. `EnforceUppercaseSku`). Henüz hiçbir yere uygulanmamış migration için yerinde güncelleme istisnadır ve DECISIONS'a yazılır.
+  - Migration uygulamadan önceki ön kontrol (hedef veritabanı adı, tablo/satır/geçmiş durumu) **kapalı-başarısız** olmalı: sorgu dosyasla (`psql -f`) verilir, sonucu boşsa/beklenenden farklıysa betik açıkça durur (`$ErrorActionPreference = 'Stop'`). Windows PowerShell 5.1 yerel komutlara çift tırnak geçirmez; tırnaklı tanımlayıcılar (`"MigrationId"`) için dosya kullan.
 - Bağlantı dizesi yoksa uygulama açılır, yalnızca `/health/ready` 503 verir ve gerçek-DB testi `Skipped` görünür.
 
 ## Gerçek PostgreSQL testleri (`tedarikcore_test`)
@@ -70,6 +72,7 @@ dotnet run --project src/TedarikCore.Api --launch-profile http   # http://localh
   `dotnet ef database update --connection "<Test dizesi>" --project src/TedarikCore.Infrastructure --startup-project src/TedarikCore.Api` (aynı komutta `ConnectionStrings__Default` de test dizesine çevrilir ki dev'e yönlenemesin). Uygulanmamışsa gerçek-DB testleri `Failed` olur (`42P01`).
 - Veri izolasyonu: her test benzersiz SKU (`T06-...-<guid>`) kullanır ve yazdıklarını commit etmeden transaction'ı geri alır. Tek istisna eşzamanlılık testidir (iki bağlantı commit ister); o test kendi benzersiz SKU'sunu silerek temizler.
 - Test veritabanı oluşturmak/silmek, rol ve yetki değiştirmek ve migration uygulamak her seferinde kullanıcı onayı ister.
+- Test altyapısı: bağlantı `PostgresTestDatabase.OpenVerifiedConnectionAsync()` ile açılır (hata olursa dispose eder). Commit gerektiren testlerde temizlik `RunWithCleanupAsync` + `DeleteProductBySkuAsync` (yalnızca tam SKU; `T06-%` gibi joker silme yapılmaz) ile yapılır. DB testleri tek xUnit koleksiyonunda seri çalışır.
 
 ## Testler
 

@@ -56,22 +56,26 @@ Son güncelleme: 2026-10-21
 - Güvenlik koruması (`PostgresTestDatabase`): hedef `tedarikcore_test` değilse yazma yok; koruma testle kanıtlandı.
 - Testler 59 → 89 (UnitTests 54, IntegrationTests 35).
 
+### ADIM 07 — SKU kuralı, yeni migration ve test güvenliği (`feature/adim-07-sku-database` dalı)
+- Kural eklenmeden önce C# `ToUpperInvariant()` ile PostgreSQL `upper()` tüm Unicode (1.112.063 kod noktası) için karşılaştırıldı: C# çıktısı hiç reddedilmiyor (0 uyumsuzluk). PostgreSQL 478 egzotik küçük harfi büyütmüyor, yani CHECK ASCII ve Türkçe harflerde tam, bu karakterlerde eksik koruma (DECISIONS 026). Ölçüm kalıcı test olarak durur.
+- `ProductConfiguration`: `ck_products_sku_uppercase` (`sku = upper(sku)`). `ix_products_sku` korundu.
+- Yeni migration **`EnforceUppercaseSku`**: yalnızca `ADD CONSTRAINT`; `InitialCatalog` değiştirilmedi. SQL incelendi (DROP/DELETE/UPDATE/CREATE yok).
+- Migration **kullanıcının ayrı onayıyla yalnızca `tedarikcore_test`'e uygulandı** ve PostgreSQL'den doğrulandı: 2 migration kaydı, 3 kısıt (`pk_products`, `ck_products_price_kurus_positive`, `ck_products_sku_uppercase`), `ix_products_sku` UNIQUE, `products` 0 satır. `tedarikcore_dev` **değişmedi (0 tablo)**.
+- Test altyapısı: hata durumunda bağlantı dispose, `RunWithCleanupAsync` (asıl hata ve temizlik hatası kaybolmaz), tam-SKU temizliği, seri xUnit koleksiyonu (DECISIONS 027).
+- Gerçek veritabanı testleri güncellendi: küçük harfli ham SQL `23514` (`ck_products_sku_uppercase`), `Product.Create` ile Türkçe/özel karakterli SKU'lar kaydedilir, ADIM 06'daki "indeks harfe duyarlı" testi yeni davranışa çevrildi.
+- Uygulama öncesi kırmızı taban: migration uygulanmadan yeni kurala bağlı 7 test kırmızıydı; uygulandıktan sonra yeşile döndü.
+- Testler 89 → 114 (UnitTests 57, IntegrationTests 57).
 ## Bilinen eksikler
 - Application katmanında henüz iş mantığı ve dolayısıyla unit test yok. Domain'de `Product` kuralları 28 testle kapsanıyor; UnitTests ayrıca mimari, EF eşleme ve migration testlerini içeriyor.
-- Geliştirme bağlantısı `postgres` yönetici kullanıcısı ve basit bir demo parolasıyla kuruldu (kullanıcı kararı: canlıya çıkılmayacak demo). Canlı kullanımdan önce yetkisi sınırlı ayrı bir kullanıcı gerekir.
-- `/health/ready` gerçek-DB testi (ADIM 04) hâlâ `Default` (`tedarikcore_dev`) bağlantısını yalnızca okuma/bağlanma amacıyla kullanıyor; yazma testleri `tedarikcore_test`'te.
-- `tedarikcore_dev` boş (0 tablo): `InitialCatalog` orada **uygulanmadı**, ayrı onay bekliyor. Migration'ın gerçek PostgreSQL'de çalıştığı `tedarikcore_test` üzerinde kanıtlandı.
-- SKU unique index'i **harf büyüklüğüne duyarlı**: Domain SKU'yu büyük harfe çevirdiği için `Product.Create` ile çakışma çıkmaz, ama ham SQL `ABC` ve `abc`'yi ayrı SKU olarak ekleyebilir (`tedarikcore_test`'te gözlemlendi). Şema değişikliği yapılmadı; seçenekler DECISIONS 023'te, onay bekliyor.
+- Geliştirme ve test bağlantıları `postgres` yönetici kullanıcısı ve basit bir demo parolasıyla kuruldu (kullanıcı kararı: canlıya çıkılmayacak demo). Canlı kullanımdan önce yetkisi sınırlı ayrı bir kullanıcı gerekir.
+- `/health/ready` gerçek-DB testi (ADIM 04) `Default` (`tedarikcore_dev`) bağlantısını yalnızca okuma/bağlanma amacıyla kullanıyor; yazma testleri `tedarikcore_test`'te.
+- `tedarikcore_dev` boş (0 tablo): iki migration orada **uygulanmadı**, ayrı onay bekliyor. Dev'de veri varsa `ADD CONSTRAINT` mevcut satırları doğrular; küçük harfli SKU bulunursa migration tümüyle geri alınır, uygulamadan önce `select sku from products where sku <> upper(sku)` ile kontrol edilmeli.
+- SKU CHECK'i ASCII ve Türkçe harflerde tamdır; PostgreSQL'in büyütmediği ~478 egzotik karakterde (ör. `ý`/`Ý`) ham SQL ile büyük/küçük çift geçebilir. Gerekirse `upper(sku)` üzerinde unique index (DECISIONS 026). Kural PostgreSQL yerel ayarına bağlı: farklı sunucuda uyumluluk testi (`SkuUppercaseCompatibilityPostgresTests`) mutlaka çalıştırılmalı.
+- Windows PowerShell 5.1 ile `psql`/yerel komutlarda çift tırnak ve `throw` ön-kontrol tuzakları var (DECISIONS 027); yeni betiklerde SQL `-f` dosyasıyla verilmeli.
 - CI bilerek yok (karar: yalnızca yerel test); testlerin çalıştırılması geliştiricinin sorumluluğunda.
 - Coverage ölçümü kurulmadı (`coverlet.collector` pakete dahil ama kullanılmıyor).
-
-## Sonraki teknik iyileştirmeler (kod incelemesinden; henüz yapılmadı)
-Bunlar test altyapısının dayanıklılığı içindir, davranışı değiştirmez; bir sonraki uygun adımda ele alınacak.
-- **Test bağlantısının hata durumunda dispose edilmesi** (`tests/.../Database/PostgresTestDatabase.cs`, `OpenVerifiedConnectionAsync`): bağlantı yalnızca "yanlış veritabanı" dalında dispose ediliyor. `OpenAsync` ya da `select current_database()` hata verirse `NpgsqlConnection` dispose edilmeden bırakılır. Çözüm: tüm yolu `try/catch` ile sarıp hata olursa bağlantıyı dispose etmek.
-- **Eşzamanlılık testinin temizlik dayanıklılığı** (`ProductPostgresTests.ConcurrentInserts_...`): `finally` içindeki `delete` ilk bağlantıyı kullanıyor. O bağlantı bozulmuşsa temizlik hata verir ve asıl test hatasını maskeler, satır da kalabilir. Çözüm: temizliği taze doğrulanmış bir bağlantıyla yapmak, kendi hatasını yutup asıl hatayı korumak ve `T06-` önekli artık satırları test sınıfı başında süpürmek (süreç ortasında kesilen bir koşunun commit'li satırı kalabilir).
-
 ## Sırada
-- ADIM 07 (kullanıcı onayı bekleniyor). ADIM 05–06, PR #2 ile `main`'e normal merge edildi.
+- ADIM 08 (kullanıcı onayı bekleniyor). ADIM 07 değişiklikleri `feature/adim-07-sku-database` dalında yerel commit; push/merge onay bekliyor.
 
 ## Kapsam dışı (henüz yapılmadı)
-Product API ve Application servisleri, Order/Inventory iş mantığı, Authentication/JWT, React frontend, Docker/deployment, `InitialCatalog`'un `tedarikcore_dev`'e uygulanması ve SKU harf büyüklüğü şema kararı (DECISIONS 023).
+Product API ve Application servisleri, Order/Inventory iş mantığı, Authentication/JWT, React frontend, Docker/deployment, iki migration'ın `tedarikcore_dev`'e uygulanması ve (gerekirse) `upper(sku)` unique index kararı.

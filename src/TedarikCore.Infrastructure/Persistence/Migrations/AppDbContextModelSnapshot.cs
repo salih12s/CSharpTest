@@ -58,6 +58,8 @@ namespace TedarikCore.Infrastructure.Persistence.Migrations
                     b.ToTable("products", null, t =>
                         {
                             t.HasCheckConstraint("ck_products_price_kurus_positive", "price_kurus > 0");
+
+                            t.HasCheckConstraint("ck_products_sku_uppercase", "sku = upper(sku)");
                         });
                 });
 #pragma warning restore 612, 618
