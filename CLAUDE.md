@@ -14,6 +14,7 @@ src/
 docs/
   PROJECT_STATUS.md          Hangi aşamadayız, sırada ne var
   DECISIONS.md               Mimari kararlar ve nedenleri
+  CODE_WALKTHROUGH.md        Türkçe kod okuma rehberi (kod değişince güncellenir)
 ```
 
 ## Bağımlılık yönü

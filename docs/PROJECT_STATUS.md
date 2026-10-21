@@ -25,6 +25,11 @@ Son güncelleme: 2026-10-21
 - Commit'ler normal `git push` ile `origin/main`'e gönderildi (force-push yok).
 - **Kural:** GitHub Actions ve ücretli CI kullanılmayacak. Her geliştirme adımı sonunda `dotnet restore`, `dotnet build` ve `dotnet test` (`TedarikCore.slnx`) yerelde çalıştırılacak; test sonuçları açıkça raporlanacak.
 
+### Kod okuma ve klasör temizliği (ADIM 03 sonrası)
+- `docs/CODE_WALKTHROUGH.md` eklendi: Türkçe kod okuma rehberi.
+- Yalnızca `.gitkeep` içeren `Domain/Common` ve `Api/Middleware` klasörleri kaldırıldı. `Application/Abstractions`, `Infrastructure/Persistence` ve `Api/Controllers` korundu.
+- Kod, `.csproj` ve ProjectReference bağlantılarına dokunulmadı.
+
 ## Bilinen eksikler
 - Saf unit test yok: henüz test edilecek Domain/Application mantığı bulunmuyor. UnitTests şimdilik yalnızca mimari testi içeriyor.
 - `/health` yalnızca "uygulama ayakta" der; veritabanı kontrolü yok (DB henüz yok).

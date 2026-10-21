@@ -13,7 +13,7 @@ Visual Studio'nun oluşturduğu `TedarikCore` projesi `src/TedarikCore.Api` oldu
 `AddApplication()` ve `AddInfrastructure()` kendi projelerinde durur; `Program.cs` sade kalır. Bu projeler yalnızca `Microsoft.Extensions.DependencyInjection.Abstractions` paketine bağlıdır.
 
 ## 005 — Boş katman klasörleri `.gitkeep` ile tutuldu (2026-10-21)
-`Domain/Common`, `Application/Abstractions`, `Infrastructure/Persistence`, `Api/Middleware`. Henüz soyutlama yazılmadı; ihtiyaç doğunca doldurulacak.
+`Application/Abstractions`, `Infrastructure/Persistence`, `Api/Controllers`. Henüz soyutlama yazılmadı; ihtiyaç doğunca doldurulacak. `Domain/Common` ve `Api/Middleware` yalnızca `.gitkeep` içerdiği ve yakın bir kullanımı olmadığı için temizlik turunda kaldırıldı (2026-10-21); gerektiğinde yeniden açılır.
 
 ## 006 — xUnit v2 (2.9.3) + Microsoft.AspNetCore.Mvc.Testing 10.0.12 (2026-10-21)
 `dotnet new xunit` şablonunun getirdiği sürümler kullanıldı; Mvc.Testing, API ile aynı 10.0.x hattında. **Neden:** SDK ile gelen, en az sürpriz çıkaran kombinasyon. xUnit v3'e geçiş ihtiyaç olursa ayrı bir karar olur.
