@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using TedarikCore.Domain.Catalog;
 using TedarikCore.Infrastructure.Persistence;
 
@@ -79,6 +81,19 @@ public class ProductMappingTests
 
         Assert.False(property.IsNullable);
         Assert.Equal(200, property.GetMaxLength());
+    }
+
+    [Fact]
+    public void Products_Table_HasCheck_PriceKurus_GreaterThanZero()
+    {
+        using var context = CreateContext();
+        var table = context.GetService<IDesignTimeModel>().Model
+            .GetRelationalModel()
+            .FindTable("products", null)!;
+
+        var check = Assert.Single(table.CheckConstraints);
+        Assert.Equal("ck_products_price_kurus_positive", check.Name);
+        Assert.Equal("price_kurus > 0", check.Sql);
     }
 
     [Fact]

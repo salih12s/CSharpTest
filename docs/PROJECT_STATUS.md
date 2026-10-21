@@ -41,11 +41,11 @@ Son güncelleme: 2026-10-21
 
 ### ADIM 05 — Product domain ve ilk migration (`feature/adim-05-product` dalı)
 - `Domain/Catalog/Product.cs`: `Id`, `Sku`, `Name`, `PriceKurus`, `IsActive`; `Product.Create(...)` ve `ChangePrice(...)` ile doğrulama; setter'lar private.
-- `Infrastructure`: `DbSet<Product>`, `Persistence/Configurations/ProductConfiguration.cs` (tablo `products`, snake_case kolonlar, `ix_products_sku` unique index).
-- İlk migration `InitialCatalog` **üretildi** (`Persistence/Migrations`). Yalnızca `products` tablosu ve `ix_products_sku` indeksi oluşturur; DROP/DELETE/ALTER yok.
+- `Infrastructure`: `DbSet<Product>`, `Persistence/Configurations/ProductConfiguration.cs` (tablo `products`, snake_case kolonlar, `ix_products_sku` unique index, `ck_products_price_kurus_positive` CHECK `price_kurus > 0`).
+- İlk migration `InitialCatalog` **üretildi** (`Persistence/Migrations`). Yalnızca `products` tablosunu, `ix_products_sku` unique indeksini ve `ck_products_price_kurus_positive` CHECK kısıtını oluşturur; DROP/DELETE/ALTER yok. Hiçbir veritabanına uygulanmadığı için CHECK kısıtı ikinci bir migration yerine aynı `InitialCatalog` içine işlendi.
 - **Migration hiçbir veritabanına uygulanmadı.** `tedarikcore_dev` içinde tablo yok (salt-okunur sorguyla doğrulandı).
 - `dotnet-ef` 10.0.12 yerel araç olarak eklendi (`dotnet-tools.json`); Api projesine `Microsoft.EntityFrameworkCore.Design` 10.0.12 (`PrivateAssets=all`).
-- Testler 15 → 55 (UnitTests 10 → 50, IntegrationTests 5): Domain kuralları (28), EF eşlemesi (DB'siz, 10) ve model–migration uyumu (2).
+- Testler 15 → 59 (UnitTests 10 → 54, IntegrationTests 5): Domain kuralları (28), EF eşlemesi (DB'siz, 11) ve migration (5: varlık, model–snapshot uyumu, `Up` içeriği, yıkıcı işlem yokluğu, `Down`).
 
 ## Bilinen eksikler
 - Saf unit test yok: henüz test edilecek Domain/Application mantığı bulunmuyor. UnitTests şimdilik yalnızca mimari testi içeriyor.
@@ -53,12 +53,12 @@ Son güncelleme: 2026-10-21
 - Gerçek-DB testi `tedarikcore_dev`'e bağlanıyor (yalnızca bağlantı denemesi). Veri yazan testlerden önce ayrı test veritabanı gerekir.
 - `tedarikcore_dev` boş: `InitialCatalog` migration'ı yazıldı ama **uygulanmadı**. Gerçek PostgreSQL'de çalıştığı henüz kanıtlanmadı; SQL scriptinin üretilmiş olması uygulandığı anlamına gelmez.
 - SKU benzersizliği yalnızca unique index'le korunuyor; gerçek veritabanıyla yazılmış test henüz yok (ayrı test veritabanı onay bekliyor).
-- Veritabanında fiyat için CHECK kısıtı (`price_kurus > 0`) yok; kural yalnızca Domain'de. Öneri olarak bırakıldı.
+- Fiyat CHECK kısıtının PostgreSQL'de gerçekten reddettiği (ör. `price_kurus = 0` insert) henüz denenmedi; yalnızca SQL ve model düzeyinde doğrulandı.
 - CI bilerek yok (karar: yalnızca yerel test); testlerin çalıştırılması geliştiricinin sorumluluğunda.
 - Coverage ölçümü kurulmadı (`coverlet.collector` pakete dahil ama kullanılmıyor).
 
 ## Sırada
-- ADIM 06 (kullanıcı onayı bekleniyor). `feature/adim-05-product` dalı henüz push/merge edilmedi.
+- ADIM 06 (kullanıcı onayı bekleniyor). `feature/adim-05-product` dalı push edildi, PR açıldı; kod incelemesi ve merge onayı bekleniyor.
 
 ## Kapsam dışı (henüz yapılmadı)
 EF Core migration/entity, Authentication/JWT, Product/Order/Inventory iş mantığı, React frontend, Docker/deployment.

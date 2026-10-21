@@ -370,7 +370,7 @@ Aşağıdaki aşama sırası bir **öneridir**; kesin plan değildir. Her aşama
 |---|---|---|
 | `InitialCatalog` migration'ının **uygulanması** | Bilerek yapılmadı: onay bekliyor. Migration dosyası ve SQL'i var, ama `tedarikcore_dev` hâlâ boş | Kullanıcı onayından sonra (öneri: ADIM 06) |
 | Ürün için veri yazan/okuyan kod (repository, servis), API | Kapsam dışıydı | Migration uygulandıktan sonra |
-| Fiyat için veritabanı CHECK kısıtı (`price_kurus > 0`) | Şimdilik kural yalnızca Domain'de | Öneri: bir sonraki migration'da |
+| CHECK kısıtının (`price_kurus > 0`) PostgreSQL'de gerçekten reddettiğinin kanıtı | Kısıt SQL'de ve modelde var, ama gerçek veritabanında denenmedi | Ayrı test veritabanı onaylanınca |
 | Güvenli veritabanı kullanıcısı | Geliştirmede `postgres` yönetici kullanıcısı ve basit bir demo parolası kullanılıyor | Canlıya çıkmadan önce; ayrı, yetkisi sınırlı kullanıcı |
 | Test için ayrı veritabanı | Gerçek-DB testi şimdilik `tedarikcore_dev`'e bağlanıyor (yalnızca okuma/bağlanma) | Veri yazan ilk testlerden önce (öneri: `tedarikcore_test`) |
 | Domain kavramları Order, Inventory (Product artık var) | İş kuralı henüz tasarlanmadı | Sonraki modüllerle |
@@ -417,19 +417,25 @@ Bir ürünü ve onun değişmez kurallarını tarif eder. Veritabanını, web'i 
 | `Id` | `id uuid`, birincil anahtar `pk_products` (değeri veritabanı değil kod üretir, `ValueGeneratedNever`) |
 | `Sku` | `sku character varying(64) NOT NULL` + **unique index** `ix_products_sku` |
 | `Name` | `name character varying(200) NOT NULL` |
-| `PriceKurus` | `price_kurus bigint NOT NULL` |
+| `PriceKurus` | `price_kurus bigint NOT NULL` + **CHECK kısıtı** `ck_products_price_kurus_positive`: `price_kurus > 0` |
 | `IsActive` | `is_active boolean NOT NULL` |
 
 Uzunluk sınırları `Product.MaxSkuLength` ve `Product.MaxNameLength` sabitlerinden gelir: kural tek yerde durur, Domain ile veritabanı ayrışamaz.
 
 ### Migration (`Persistence/Migrations`)
-- **Ne yapar:** Veritabanı şemasını koddan üretilen adımlarla değiştirir. `InitialCatalog` yalnızca `products` tablosunu ve `ix_products_sku` indeksini oluşturur (SQL'i `CREATE TABLE`, `CREATE UNIQUE INDEX` ve bir geçmiş kaydı ekler; `DROP`/`DELETE`/`ALTER` yoktur).
+- **Ne yapar:** Veritabanı şemasını koddan üretilen adımlarla değiştirir. `InitialCatalog` yalnızca `products` tablosunu (içinde birincil anahtar ve **CHECK** kısıtı), `ix_products_sku` indeksini oluşturur (SQL'i `CREATE TABLE`, `CREATE UNIQUE INDEX` ve bir geçmiş kaydı ekler; `DROP`/`DELETE`/`ALTER` yoktur). **CHECK kısıtı** = tabloya her satır eklenirken/güncellenirken veritabanının kontrol ettiği kural; `price_kurus > 0` olmayan satırı Domain'i atlayan bir yol bile ekleyemez.
 - **Dosyalar:** `..._InitialCatalog.cs` (uygula: `Up`; geri al: `Down`), `.Designer.cs` (EF'in iç kaydı), `AppDbContextModelSnapshot.cs` (modelin son hâlinin fotoğrafı; bir sonraki migration "ne değişti" farkını bununla bulur).
 - **Hâlâ uygulanmadı.** Dosya ve SQL var ama hiçbir veritabanında çalıştırılmadı. `tedarikcore_dev` boş. SQL'in üretilmiş olması PostgreSQL'de başarıyla çalıştığını **kanıtlamaz**; bunu ancak onaydan sonraki uygulama adımı gösterir.
 - **Güvenlik önlemi:** Migration üretilirken bağlantı, kimsenin dinlemediği bir adrese çevrilir; araç yanlışlıkla gerçek veritabanına bağlansa bile bağlanamaz.
 
 ### Yeni testler (UnitTests)
 - `Domain/Catalog/ProductTests.cs` (28 test): geçerli ürün, boş SKU/ad (`null`, `""`, boşluk), SKU kırpma ve büyük harf, **sınır değerleri** (tam 64/200 geçer, 65/201 reddedilir, uzunluk kırpmadan sonra ölçülür), sıfır/negatif/`long.MinValue` fiyat reddi, en küçük (1) ve en büyük (`long.MaxValue`) fiyat, geçerli ve geçersiz `ChangePrice` (geçersizde eski fiyat korunur), public setter olmaması, Türkçe kültürde SKU. Hepsi saf; DB ve ağ yok.
-- `Infrastructure/ProductMappingTests.cs` (10 test): `AppDbContext`'in **modelini** veritabanına bağlanmadan kurar ve tablo, kolon adları, `uuid`/`bigint`/`boolean` türleri, unique index ve uzunlukları kontrol eder. Bağlantı dizesi bilerek ulaşılamaz bir adrestir.
-- `Infrastructure/MigrationTests.cs` (2 test): `InitialCatalog` mevcut mu; model ile migration fotoğrafı (snapshot) uyuşuyor mu. Biri entity'yi değiştirip yeni migration üretmeyi unutursa test kırılır. Bu da veritabanına bağlanmaz.
+- `Infrastructure/ProductMappingTests.cs` (11 test): `AppDbContext`'in **modelini** veritabanına bağlanmadan kurar ve tablo, kolon adları, `uuid`/`bigint`/`boolean` türleri, unique index, uzunluklar ve CHECK kısıtının adı ile ifadesini kontrol eder. Bağlantı dizesi bilerek ulaşılamaz bir adrestir.
+- `Infrastructure/MigrationTests.cs` (5 test), hiçbiri veritabanına bağlanmaz:
+  1. `InitialCatalog` var ve tek migration.
+  2. Model ile migration fotoğrafı (snapshot) uyuşuyor mu. Biri entity'yi değiştirip migration'ı güncellemeyi unutursa kırılır.
+  3. `Up` yalnızca `products` tablosunu (CHECK ile) ve `ix_products_sku` unique indeksini oluşturuyor.
+  4. `Up` içinde `CreateTable`/`CreateIndex` dışında hiçbir işlem (silme, ham SQL vb.) yok.
+  5. `Down` yalnızca `products` tablosunu düşürüyor.
+  3. ve 4. test, migration dosyasındaki bir satır silinirse snapshot hâlâ doğru görünse bile kırılır (mutasyonla doğrulandı).
 - Test edilmeyen: SKU unique kısıtının **gerçekten** çalıştığı ve migration'ın gerçek PostgreSQL'de uygulandığı. İkisi de gerçek veritabanı ister; ayrı test veritabanı onayı bekliyor.

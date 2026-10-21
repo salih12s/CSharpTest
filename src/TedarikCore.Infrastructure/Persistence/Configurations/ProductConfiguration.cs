@@ -8,7 +8,8 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
 {
     public void Configure(EntityTypeBuilder<Product> builder)
     {
-        builder.ToTable("products");
+        builder.ToTable("products", table =>
+            table.HasCheckConstraint("ck_products_price_kurus_positive", "price_kurus > 0"));
 
         builder.HasKey(p => p.Id).HasName("pk_products");
         builder.Property(p => p.Id)

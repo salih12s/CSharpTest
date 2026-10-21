@@ -24,6 +24,7 @@ namespace TedarikCore.Infrastructure.Persistence.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_products", x => x.id);
+                    table.CheckConstraint("ck_products_price_kurus_positive", "price_kurus > 0");
                 });
 
             migrationBuilder.CreateIndex(

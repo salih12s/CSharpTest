@@ -58,7 +58,10 @@ namespace TedarikCore.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_products_sku");
 
-                    b.ToTable("products", (string)null);
+                    b.ToTable("products", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_products_price_kurus_positive", "price_kurus > 0");
+                        });
                 });
 #pragma warning restore 612, 618
         }
