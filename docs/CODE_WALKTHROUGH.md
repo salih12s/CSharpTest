@@ -25,9 +25,9 @@ Sözlük (sık geçen İngilizce terimler):
 
 | Proje | Görevi | Şu an içinde ne var |
 |---|---|---|
-| `TedarikCore.Domain` | İşin kendisi: "Ürün", "Sipariş" gibi kavramlar ve değişmez iş kuralları. Hiçbir şeye bağımlı değildir. | Boş. Henüz kavram yok. |
+| `TedarikCore.Domain` | İşin kendisi: "Ürün", "Sipariş" gibi kavramlar ve değişmez iş kuralları. Hiçbir şeye bağımlı değildir. | `Catalog/Product.cs`: ürün kavramı ve kuralları (bkz. 10. bölüm). |
 | `TedarikCore.Application` | Uygulamanın yaptığı işler (use case): "sipariş oluştur" gibi. Dış dünyayla konuşacağı şeylerin sözleşmelerini (interface) burada tanımlar. | Yalnızca `AddApplication()` kayıt metodu (boş). |
-| `TedarikCore.Infrastructure` | Dış dünya ile gerçek konuşma: veritabanı, e-posta, dosya vb. Application'daki sözleşmeleri gerçekler. | `AppDbContext` (PostgreSQL kapısı), `AddInfrastructure()` kayıt metodu ve `/health/ready` için veritabanı sağlık kontrolü. |
+| `TedarikCore.Infrastructure` | Dış dünya ile gerçek konuşma: veritabanı, e-posta, dosya vb. Application'daki sözleşmeleri gerçekler. | `AppDbContext` (PostgreSQL kapısı, `Products` tablosu), `ProductConfiguration` (tablo eşlemesi), `Migrations` (veritabanı değişiklik dosyaları), `AddInfrastructure()` kayıt metodu ve `/health/ready` için veritabanı sağlık kontrolü. |
 | `TedarikCore.Api` | Uygulamanın HTTP kapısı: istekleri alır, Application'a iletir, cevabı döner. Tüm parçaları `Program.cs`'te birleştirir. | `Program.cs` ve ayarlar. `/health` buradan çıkar. |
 
 Mantık: iş kuralları (Domain) web'den, veritabanından ve çerçeveden habersiz kalır. Yarın veritabanı ya da web çerçevesi değişse bile Domain değişmez.
@@ -59,7 +59,10 @@ Neden Application, Infrastructure'ı bilmiyor? Application "bana ürünleri kayd
 | `src/TedarikCore.Api/Controllers` | Api | Controller HTTP'ye aittir (adres, status kodu). Boş, `.gitkeep` var; ilk endpoint'ler gelince dolacak. |
 | `src/TedarikCore.Api/Properties` | Api | `launchSettings.json` içerir: yerel çalıştırmada hangi portlar (http `5229`, https `7189`) ve hangi ortam (`Development`) kullanılacak. |
 | `src/TedarikCore.Application/Abstractions` | Application | Interface'lerin (sözleşmelerin) duracağı yer. Application tanımlar, Infrastructure gerçekler. Henüz boş. |
-| `src/TedarikCore.Infrastructure/Persistence` | Infrastructure | "Persistence" = verinin kalıcı saklanması. Veritabanı erişim kodu burada. Şimdilik yalnızca `AppDbContext.cs` var (tablo yok). |
+| `src/TedarikCore.Domain/Catalog` | Domain | "Catalog" = ürün kataloğu. Ürünle ilgili iş kuralları burada; veritabanını ya da web'i bilmez. |
+| `src/TedarikCore.Infrastructure/Persistence` | Infrastructure | "Persistence" = verinin kalıcı saklanması. Veritabanı erişim kodu burada: `AppDbContext.cs`. |
+| `src/TedarikCore.Infrastructure/Persistence/Configurations` | Infrastructure | Her entity'nin tablo eşlemesi (hangi kolon, hangi tür, hangi indeks). Tablo detayı Domain'e sızmasın diye burada. |
+| `src/TedarikCore.Infrastructure/Persistence/Migrations` | Infrastructure | **Migration** = veritabanının şemasını adım adım değiştiren, EF Core'un ürettiği dosyalar. Şu an tek dosya: `InitialCatalog` (**yalnızca `tedarikcore_test`'e uygulandı**; `tedarikcore_dev` hâlâ boş). |
 | `tests/TedarikCore.UnitTests` | Test | Hızlı testler; uygulama ayağa kalkmaz. |
 | `tests/TedarikCore.IntegrationTests` | Test | Uygulamayı bellekte ayağa kaldırıp HTTP ile deneyen testler. |
 | `docs/` | — | Proje belgeleri (durum, kararlar, bu rehber). |
@@ -70,6 +73,7 @@ Klasör içinde olmayan ama önemli dosyalar:
 - `.gitignore`: git'in saymaması gereken dosyalar (`bin/`, `obj/`, `.vs/`, `*.user`, gizli dosyalar, test çıktıları).
 - `appsettings.json` / `appsettings.Development.json`: uygulama ayarları (şimdilik yalnızca log seviyeleri ve `AllowedHosts`). Parola ve bağlantı bilgisi buraya yazılmaz; veritabanı bağlantı dizesi **User Secrets**'tadır (bkz. aşağıdaki "Veritabanı bağlantısı" bölümü).
 - `TedarikCore.Api.http`: Visual Studio'dan `/health`'e elle istek atmak için örnek dosya.
+- `dotnet-tools.json` (kök): bu projede kullanılan komut satırı araçlarını sabitler. Şu an `dotnet-ef` 10.0.12 (migration üretmek için). `dotnet tool restore` ile kurulur.
 - `TedarikCore.Api.csproj.user`: Visual Studio'nun kişisel ayarı (git'e girmez).
 - `bin/` ve `obj/`: derleme çıktıları; silinse yeniden üretilir. Git'e girmez.
 
@@ -203,7 +207,7 @@ Neden bağlantı dizesi ilk kullanımda okunuyor? Bağlantı bilgisi yoksa uygul
 ### Terimler
 - **EF Core (Entity Framework Core):** Veritabanı tablolarına C# nesneleriyle ulaşmayı sağlayan kütüphane.
 - **Npgsql:** .NET'in PostgreSQL ile konuşma sürücüsü. `Npgsql.EntityFrameworkCore.PostgreSQL` paketi EF Core'u PostgreSQL'e bağlar.
-- **`DbContext` (`AppDbContext`):** Veritabanıyla yapılan işlerin (sorgu, kaydetme) geçtiği kapı. Şu an içi boştur: tablo (`DbSet`) ve migration henüz yok.
+- **`DbContext` (`AppDbContext`):** Veritabanıyla yapılan işlerin (sorgu, kaydetme) geçtiği kapı. İçinde `Products` adlı bir `DbSet<Product>` (ürün tablosunun kapısı) var; eşlemeyi `OnModelCreating` içindeki `ApplyConfigurationsFromAssembly` ile `Configurations` klasöründen toplar. Migration `tedarikcore_test` veritabanına uygulandı; `tedarikcore_dev` henüz boş (tablo yok).
 - **`HealthCheckTags.Ready`:** `"ready"` yazısını tek yerde tutan sabit; yazım hatası olmasın diye.
 
 ### Veritabanı bağlantısı ve gizli bilgi
@@ -254,8 +258,8 @@ Hangi proje neye bağlı:
 | Domain | — | — |
 | Application | Domain | DependencyInjection.Abstractions |
 | Infrastructure | Application, Domain | DependencyInjection.Abstractions, Npgsql.EntityFrameworkCore.PostgreSQL, HealthChecks.EntityFrameworkCore |
-| Api | Application, Infrastructure | OpenApi |
-| UnitTests | Infrastructure (DI kaydını denemek için) | Configuration, xunit, Test.Sdk, runner, coverlet |
+| Api | Application, Infrastructure | OpenApi, EntityFrameworkCore.Design (yalnızca migration aracı için; `PrivateAssets=all`, uygulamaya taşınmaz) |
+| UnitTests | Domain, Infrastructure | Configuration, xunit, Test.Sdk, runner, coverlet |
 | IntegrationTests | Api | Mvc.Testing, Configuration.UserSecrets, xunit, Test.Sdk, runner, coverlet |
 
 Yeni paketlerin işi: `Npgsql.EntityFrameworkCore.PostgreSQL` EF Core'u (ve onun üzerinden `Microsoft.EntityFrameworkCore` paketini) getirir ve PostgreSQL'e bağlar. `HealthChecks.EntityFrameworkCore` bir `DbContext`'in veritabanına bağlanabildiğini deneyen hazır sağlık kontrolünü verir. `Api.csproj` içindeki `<UserSecretsId>` satırı User Secrets dosyasının kimliğidir; sır değildir, Git'e girer.
@@ -364,11 +368,13 @@ Aşağıdaki aşama sırası bir **öneridir**; kesin plan değildir. Her aşama
 
 | Eksik | Neden henüz yok | Eklenebileceği aşama (öneri) |
 |---|---|---|
-| EF Core **migration** ve tablolar (`DbSet`, entity) | Bilerek ertelendi; `AppDbContext` var ama içi boş, veritabanında henüz tablo yok | İlk modülle birlikte (öneri) |
-| Güvenli veritabanı kullanıcısı | Geliştirmede `postgres` yönetici kullanıcısı ve basit bir demo parolası kullanılıyor | Canlıya çıkmadan önce; ayrı, yetkisi sınırlı kullanıcı |
-| Test için ayrı veritabanı | Gerçek-DB testi şimdilik `tedarikcore_dev`'e bağlanıyor (yalnızca okuma/bağlanma) | Veri yazan ilk testlerden önce (öneri: `tedarikcore_test`) |
-| Domain kavramları (Product, Order, Inventory) | İş kuralı henüz tasarlanmadı | Veritabanından sonra ya da öncesinde; ilk modülle birlikte |
-| Saf unit testler | Test edilecek iş kuralı yok | İlk Domain/Application kuralı yazılırken |
+| `InitialCatalog` migration'ının `tedarikcore_dev`'e **uygulanması** | `tedarikcore_test`'e uygulandı ve doğrulandı; `tedarikcore_dev` bilerek hâlâ boş (0 tablo), onay bekliyor | Kullanıcı onayından sonra |
+| SKU harf büyüklüğü duyarlılığı | Unique index `ABC` ile `abc`'yi ayrı sayıyor (yalnızca Domain'i atlayan yazıcılar için risk); şema değişmedi | Karar verilirse yeni migration (bkz. DECISIONS 023) |
+| Ürün için uygulama kodu (repository, servis) ve API | Bu aşamalarda yapılmadı | Application katmanı ve ilk endpoint'lerle |
+| Güvenli veritabanı kullanıcısı | Geliştirmede ve testlerde `postgres` yönetici kullanıcısı ve basit bir demo parolası kullanılıyor | Canlıya çıkmadan önce; ayrı, yetkisi sınırlı kullanıcı |
+| Test altyapısı dayanıklılığı | Hata durumunda test bağlantısının dispose edilmesi ve eşzamanlılık testinin temizliği iyileştirilecek (ayrıntı: `PROJECT_STATUS.md` "Sonraki teknik iyileştirmeler") | Bir sonraki uygun adımda |
+| Domain kavramları Order, Inventory (Product artık var) | İş kuralı henüz tasarlanmadı | Sonraki modüllerle |
+| Application katmanında unit test | Application'da henüz iş mantığı yok (Domain'de `Product` testleri var) | İlk use case yazılırken |
 | Application use case'leri ve interface'ler (`Abstractions`) | İş kuralı yok | İlk modül |
 | Controller'lar | Henüz endpoint ihtiyacı yok | İlk modül |
 | Kimlik doğrulama (JWT) ve yetkilendirme | Bilerek ertelendi. `UseAuthorization` şu an boşta. | Kimlik aşaması; ilk korumalı endpoint'ten önce |
@@ -377,3 +383,98 @@ Aşağıdaki aşama sırası bir **öneridir**; kesin plan değildir. Her aşama
 | Docker / yayına alma | Bilerek ertelendi | En sona doğru |
 | Otomatik CI | **Bilerek hiç yok** (karar: testler yalnızca yerelde) | — |
 | Coverage ölçümü | Kurulmadı | İhtiyaç olursa |
+
+---
+
+## 10. Product, eşleme, migration ve yeni testler
+
+### Product (`Domain/Catalog/Product.cs`)
+Bir ürünü ve onun değişmez kurallarını tarif eder. Veritabanını, web'i ya da başka projeyi bilmez.
+
+| Özellik | Anlamı | Kural |
+|---|---|---|
+| `Id` | Benzersiz kimlik (`Guid`) | Nesne doğarken kod üretir |
+| `Sku` | Ürün kodu (stok takip kodu) | Boş olamaz, kırpıldıktan sonra en fazla 64 karakter, **BÜYÜK HARFE** çevrilir |
+| `Name` | Ürün adı | Boş olamaz, kırpıldıktan sonra en fazla 200 karakter, harf büyüklüğü korunur |
+| `PriceKurus` | Fiyat, **kuruş** cinsinden (`long`) | 0'dan büyük olmalı. 12,50 TL = 1250 |
+| `IsActive` | Satışta mı | Başlangıçta `true` |
+
+- **`private set`:** Özellikler dışarıdan doğrudan değiştirilemez. Değer yalnızca `Create` ve `ChangePrice` üzerinden, doğrulanarak girer.
+- **`Product.Create(sku, name, priceKurus)`:** Ürün üretmenin tek yolu. Bu tür metoda **factory (fabrika metodu)** denir: nesneyi doğrulayıp hazır halde verir. Geçersiz değerde hata fırlatır, yarım ürün oluşmaz.
+- **`ChangePrice(newPriceKurus)`:** Fiyatı değiştirir. Yeni fiyat da aynı kuralla doğrulanır; geçersizse eski fiyat korunur.
+- **`private Product()` (parametresiz constructor):** Yalnızca EF Core içindir. EF veritabanından okuduğu satırdan nesne üretirken kullanır; kod tarafından çağrılamaz.
+- **Hatalar:** SKU/ad için `ArgumentException`, fiyat için `ArgumentOutOfRangeException` (ikisi de .NET'in yerleşik hata türü).
+- **`ToUpperInvariant`:** Büyük harf çevirisi kültürden bağımsız yapılır. Türkçe ayarlı bir makinede `ToUpper()` "i"yi "İ" yapar ve aynı SKU iki makinede farklı çıkardı.
+- **SKU benzersizliği burada kontrol edilmez.** Bir nesne diğer ürünleri göremez. Bu kural veritabanındaki **unique index** ile korunur (aşağıda). İki kişi aynı anda aynı SKU'yu eklemeye çalışırsa veritabanı birini reddeder; bu, kod tarafında "önce var mı diye bak" kontrolünden daha güvenlidir.
+- Sipariş sırasında fiyat değişirse müşterinin yeniden onayı kuralı sonraki Order/Checkout modülünde uygulanacak; `Product` yalnızca fiyatı doğru tutar.
+
+### Eşleme (`Infrastructure/Persistence/Configurations/ProductConfiguration.cs`)
+**Fluent API:** Kolon ve tablo ayarlarını attribute (`[Column]`) yerine kodla, ayrı bir sınıfta yazma yolu. Böylece `Product` sınıfı veritabanı ayrıntısıyla kirlenmez.
+
+| Yapı | PostgreSQL karşılığı |
+|---|---|
+| tablo | `products` |
+| `Id` | `id uuid`, birincil anahtar `pk_products` (değeri veritabanı değil kod üretir, `ValueGeneratedNever`) |
+| `Sku` | `sku character varying(64) NOT NULL` + **unique index** `ix_products_sku` |
+| `Name` | `name character varying(200) NOT NULL` |
+| `PriceKurus` | `price_kurus bigint NOT NULL` + **CHECK kısıtı** `ck_products_price_kurus_positive`: `price_kurus > 0` |
+| `IsActive` | `is_active boolean NOT NULL` |
+
+Uzunluk sınırları `Product.MaxSkuLength` ve `Product.MaxNameLength` sabitlerinden gelir: kural tek yerde durur, Domain ile veritabanı ayrışamaz.
+
+### Migration (`Persistence/Migrations`)
+- **Ne yapar:** Veritabanı şemasını koddan üretilen adımlarla değiştirir. `InitialCatalog` yalnızca `products` tablosunu (içinde birincil anahtar ve **CHECK** kısıtı), `ix_products_sku` indeksini oluşturur (SQL'i `CREATE TABLE`, `CREATE UNIQUE INDEX` ve bir geçmiş kaydı ekler; `DROP`/`DELETE`/`ALTER` yoktur). **CHECK kısıtı** = tabloya her satır eklenirken/güncellenirken veritabanının kontrol ettiği kural; `price_kurus > 0` olmayan satırı Domain'i atlayan bir yol bile ekleyemez.
+- **Dosyalar:** `..._InitialCatalog.cs` (uygula: `Up`; geri al: `Down`), `.Designer.cs` (EF'in iç kaydı), `AppDbContextModelSnapshot.cs` (modelin son hâlinin fotoğrafı; bir sonraki migration "ne değişti" farkını bununla bulur).
+- **Uygulama durumu:** Yalnızca `tedarikcore_test` veritabanına, kullanıcı onayıyla uygulandı ve tablo/kısıt/indeks PostgreSQL'den okunarak doğrulandı. `tedarikcore_dev` **hâlâ boş**.
+- **Güvenlik önlemi:** Migration üretilirken bağlantı, kimsenin dinlemediği bir adrese çevrilir; araç yanlışlıkla gerçek veritabanına bağlansa bile bağlanamaz.
+
+### Yeni testler (UnitTests)
+- `Domain/Catalog/ProductTests.cs` (28 test): geçerli ürün, boş SKU/ad (`null`, `""`, boşluk), SKU kırpma ve büyük harf, **sınır değerleri** (tam 64/200 geçer, 65/201 reddedilir, uzunluk kırpmadan sonra ölçülür), sıfır/negatif/`long.MinValue` fiyat reddi, en küçük (1) ve en büyük (`long.MaxValue`) fiyat, geçerli ve geçersiz `ChangePrice` (geçersizde eski fiyat korunur), public setter olmaması, Türkçe kültürde SKU. Hepsi saf; DB ve ağ yok.
+- `Infrastructure/ProductMappingTests.cs` (11 test): `AppDbContext`'in **modelini** veritabanına bağlanmadan kurar ve tablo, kolon adları, `uuid`/`bigint`/`boolean` türleri, unique index, uzunluklar ve CHECK kısıtının adı ile ifadesini kontrol eder. Bağlantı dizesi bilerek ulaşılamaz bir adrestir.
+- `Infrastructure/MigrationTests.cs` (5 test), hiçbiri veritabanına bağlanmaz:
+  1. `InitialCatalog` var ve tek migration.
+  2. Model ile migration fotoğrafı (snapshot) uyuşuyor mu. Biri entity'yi değiştirip migration'ı güncellemeyi unutursa kırılır.
+  3. `Up` yalnızca `products` tablosunu (CHECK ile) ve `ix_products_sku` unique indeksini oluşturuyor.
+  4. `Up` içinde `CreateTable`/`CreateIndex` dışında hiçbir işlem (silme, ham SQL vb.) yok.
+  5. `Down` yalnızca `products` tablosunu düşürüyor.
+  3. ve 4. test, migration dosyasındaki bir satır silinirse snapshot hâlâ doğru görünse bile kırılır (mutasyonla doğrulandı).
+- Gerçek PostgreSQL testleri bir sonraki bölümde (11).
+
+---
+
+## 11. Gerçek PostgreSQL integration testleri (`tedarikcore_test`)
+
+**Neden ayrı veritabanı?** Unique index ve CHECK kısıtını ancak gerçek PostgreSQL gösterebilir (mock ya da bellek içi sahte veritabanı "reddetti" diyemez). Testler veri yazdığı için `tedarikcore_dev`'e (geliştirme verisi) ve başka projelerin veritabanlarına hiç dokunmaz; ayrı `tedarikcore_test` kullanılır. Bağlantısı `ConnectionStrings:Test` anahtarındadır.
+
+### Güvenlik koruması (`Database/PostgresTestDatabase.cs`)
+- Bağlantı dizesi yoksa gerçek-DB testleri **Skipped** (atlandı) görünür; yeşil sayılmaz.
+- Dize varsa ama veritabanı adı tam `tedarikcore_test` değilse ya da host yerel değilse test **Failed** olur ve hiçbir şey yazılmaz.
+- Bağlandıktan sonra sunucuya `select current_database()` sorulur; cevap `tedarikcore_test` değilse test durur.
+- Bu koruma kendi testlerine sahiptir (`PostgresTestDatabaseGuardTests`, DB'siz, 15 test) ve dev'e işaret eden dizeyle denendi.
+
+### Veri izolasyonu
+- Her test benzersiz SKU üretir (`T06-...-<guid>`), böylece testler birbirinin verisine çarpmaz ve sıradan bağımsızdır.
+- Yazma, **commit edilmeyen bir transaction** içinde yapılır; test bitince **rollback** olur ve tabloda kalıntı kalmaz.
+- Tek istisna eşzamanlılık testidir: iki ayrı bağlantı gerçekten commit etmek zorundadır. O test kendi SKU'sunu `finally` içinde silerek temizler.
+
+### Ne test ediliyor? (`ProductPostgresTests`, 11 test)
+| Test | Beklenen |
+|---|---|
+| Geçerli ürünü yaz ve geri oku | Aynı değerler okunur (ad kırpılmış) |
+| Fiyat değiştir, kaydet, oku | Yeni fiyat kalıcı (private setter EF ile çalışıyor) |
+| Farklı SKU'lu iki ürün | Sorunsuz kaydedilir |
+| Aynı SKU ikinci kez | PostgreSQL **`23505`** (unique violation), kısıt `ix_products_sku` |
+| Ham SQL, fiyat `1` (kontrol) | Başarılı: aşağıdaki hataların sebebinin yalnızca fiyat olduğunu gösterir |
+| Ham SQL, fiyat `0` ve `-1` | PostgreSQL **`23514`** (check violation), kısıt `ck_products_price_kurus_positive` |
+| Ham SQL, fiyatı `0`'a güncelle | `23514` |
+| `ABC` ve `abc` (ham SQL) | **İkisi de eklenir**: indeks harf büyüklüğüne duyarlı (davranış belgelendi, bkz. DECISIONS 023) |
+| İki bağlantı aynı SKU'yu aynı anda ekler | Tam biri kazanır, diğeri `23505` alır (**race** durumu) |
+| Transaction geri alınır | Satır kalmaz (izolasyon yönteminin kanıtı) |
+
+**Neden "ham SQL"?** `Product.Create` zaten sıfır ya da negatif fiyatı reddeder. Veritabanı kısıtı, Domain'i **atlayan** bir yolun (elle SQL, toplu aktarım, başka bir servis) da engellendiğini göstermek içindir: iki savunma hattı.
+
+### Şema doğrulaması (`ProductSchemaPostgresTests`, 4 test)
+Migration'ın gerçekten oluşturduğu yapıları PostgreSQL sistem kataloglarından okur: yalnızca `products` ve `__EFMigrationsHistory` tabloları, kolon türleri ve `NOT NULL` durumları, `pk_products`, `ix_products_sku` (UNIQUE), `ck_products_price_kurus_positive` (`CHECK ((price_kurus > 0))`) ve geçmişte `InitialCatalog` kaydı. Migration uygulanmamışsa bu testler bilerek Failed olur (`42P01`).
+
+### Test veritabanını hazırlama
+Testler migration **uygulamaz**. Test veritabanı bir kez, kullanıcı onayıyla hazırlanır (komut ve güvenceler `CLAUDE.md`'de). Migration'ı uygulamadan önce testler `42P01: relation "products" does not exist` ile kırmızıydı; uyguladıktan sonra yeşile döndü.
