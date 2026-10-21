@@ -29,3 +29,6 @@ app.MapControllers();
 app.MapHealthChecks("/health");
 
 app.Run();
+
+// WebApplicationFactory<Program> kullanabilsin diye (IntegrationTests).
+public partial class Program;

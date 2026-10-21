@@ -9,3 +9,12 @@ obj/
 appsettings.*.local.json
 secrets.json
 .env
+
+## Test çıktıları
+TestResults/
+coverage*/
+*.trx
+
+## Ortam dosyaları
+.env.*
+*.log

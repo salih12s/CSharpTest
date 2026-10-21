@@ -33,6 +33,26 @@ dotnet build TedarikCore.slnx
 dotnet run --project src/TedarikCore.Api --launch-profile http   # http://localhost:5229/health
 ```
 
+## Testler
+
+```
+dotnet test TedarikCore.slnx
+```
+
+- `tests/TedarikCore.UnitTests` — xUnit. Saf, hızlı testler (Domain/Application mantığı, mimari kurallar). DB, ağ ve host yok.
+- `tests/TedarikCore.IntegrationTests` — xUnit + `WebApplicationFactory<Program>`. HTTP hattından test; istemci `https://localhost` adresine gider ve yönlendirme takip etmez.
+- Yeni bir özellik, ilgili testiyle birlikte gelir. Bulunan bug için önce onu yakalayan test yazılır, sonra düzeltilir.
+- Bağımlılık kuralı `UnitTests/ArchitectureTests` altında test edilir; yeni proje referansı eklerken bu testi de güncelle.
+- Başarısız testi yeşil gösterme, atlama (`Skip`) gerekçesiz kullanma.
+
+## Git ve commit
+
+- Ana dal `main`. Commit mesajı kısa ve Türkçe/İngilizce tutarlı; "ne" yerine "neden"i yaz.
+- Commit'ten önce `dotnet build` ve `dotnet test` geçmeli.
+- `bin/`, `obj/`, `.vs/`, `*.user`, `.env*`, `secrets.json`, test çıktıları commit edilmez (`.gitignore`).
+- Push yalnızca kullanıcı isteyince yapılır.
+- Commit mesajı dosyasını BOM'suz UTF-8 yaz (PowerShell 5.1'de `Set-Content -Encoding utf8` BOM ekler).
+
 ## Kalıcı kurallar
 
 - Her geliştirme aşaması küçük ve test edilebilir olmalı.

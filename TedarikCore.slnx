@@ -5,4 +5,8 @@
     <Project Path="src/TedarikCore.Domain/TedarikCore.Domain.csproj" />
     <Project Path="src/TedarikCore.Infrastructure/TedarikCore.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TedarikCore.IntegrationTests/TedarikCore.IntegrationTests.csproj" />
+    <Project Path="tests/TedarikCore.UnitTests/TedarikCore.UnitTests.csproj" />
+  </Folder>
 </Solution>

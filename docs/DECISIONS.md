@@ -14,3 +14,12 @@ Visual Studio'nun oluşturduğu `TedarikCore` projesi `src/TedarikCore.Api` oldu
 
 ## 005 — Boş katman klasörleri `.gitkeep` ile tutuldu (2026-10-21)
 `Domain/Common`, `Application/Abstractions`, `Infrastructure/Persistence`, `Api/Middleware`. Henüz soyutlama yazılmadı; ihtiyaç doğunca doldurulacak.
+
+## 006 — xUnit v2 (2.9.3) + Microsoft.AspNetCore.Mvc.Testing 10.0.12 (2026-10-21)
+`dotnet new xunit` şablonunun getirdiği sürümler kullanıldı; Mvc.Testing, API ile aynı 10.0.x hattında. **Neden:** SDK ile gelen, en az sürpriz çıkaran kombinasyon. xUnit v3'e geçiş ihtiyaç olursa ayrı bir karar olur.
+
+## 007 — Mimari test `.csproj` okuyarak yapıldı (2026-10-21)
+Reflection (`GetReferencedAssemblies`) yerine `<ProjectReference>` satırları okunur. **Neden:** derleyici kullanılmayan referansı metadata'ya yazmaz; henüz kod olmayan katmanlarda kural sessizce "geçerdi". Test, yasak bağımlılıkları (ör. Domain → Api) yakalayacak şekilde bir kez bozularak doğrulandı. Bu test UnitTests'te durur: host ve I/O gerektirmez.
+
+## 008 — `Program` sınıfı test için `public partial` (2026-10-21)
+Top-level `Program.cs` sınıfı internal üretir; `WebApplicationFactory<Program>` için tek satırlık `public partial class Program;` eklendi. `InternalsVisibleTo` yerine bu seçildi, çünkü Microsoft'un önerdiği yol ve tek satır.
