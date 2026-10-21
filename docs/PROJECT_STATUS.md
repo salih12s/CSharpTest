@@ -48,7 +48,7 @@ Son güncelleme: 2026-10-21
 - Coverage ölçümü kurulmadı (`coverlet.collector` pakete dahil ama kullanılmıyor).
 
 ## Sırada
-- ADIM 05 (kullanıcı onayı bekleniyor). `feature/adim-04-efcore` dalı henüz push/merge edilmedi.
+- ADIM 05 (kullanıcı onayı bekleniyor). ADIM 04, PR #1 (`feature/adim-04-efcore` → `main`) kod incelemesinden sonra `main`'e merge edildi.
 
 ## Kapsam dışı (henüz yapılmadı)
 EF Core migration/entity, Authentication/JWT, Product/Order/Inventory iş mantığı, React frontend, Docker/deployment.
