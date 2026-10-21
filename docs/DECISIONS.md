@@ -23,3 +23,6 @@ Reflection (`GetReferencedAssemblies`) yerine `<ProjectReference>` satırları o
 
 ## 008 — `Program` sınıfı test için `public partial` (2026-10-21)
 Top-level `Program.cs` sınıfı internal üretir; `WebApplicationFactory<Program>` için tek satırlık `public partial class Program;` eklendi. `InternalsVisibleTo` yerine bu seçildi, çünkü Microsoft'un önerdiği yol ve tek satır.
+
+## 009 — CI yok, testler yalnızca yerelde (2026-10-21)
+GitHub Actions ve ücretli CI servisleri kullanılmaz. Her adım sonunda estore, uild, 	est yerelde çalıştırılır ve sonuçlar raporlanır. **Neden:** kullanıcının kesin kararı (maliyet ve basitlik). **Risk:** testi çalıştırmayı unutmak kırık kodu ana dala taşıyabilir; commit öncesi test geçme kuralı (CLAUDE.md) bunu hafifletir.

@@ -41,6 +41,7 @@ dotnet test TedarikCore.slnx
 
 - `tests/TedarikCore.UnitTests` — xUnit. Saf, hızlı testler (Domain/Application mantığı, mimari kurallar). DB, ağ ve host yok.
 - `tests/TedarikCore.IntegrationTests` — xUnit + `WebApplicationFactory<Program>`. HTTP hattından test; istemci `https://localhost` adresine gider ve yönlendirme takip etmez.
+- **GitHub Actions ve ücretli CI servisi kullanılmaz.** Her geliştirme adımı sonunda `dotnet restore TedarikCore.slnx`, `dotnet build TedarikCore.slnx` ve `dotnet test TedarikCore.slnx` yerelde çalıştırılır. Test sonuçları (başarılı/başarısız sayısı) açıkça raporlanır.
 - Yeni bir özellik, ilgili testiyle birlikte gelir. Bulunan bug için önce onu yakalayan test yazılır, sonra düzeltilir.
 - Bağımlılık kuralı `UnitTests/ArchitectureTests` altında test edilir; yeni proje referansı eklerken bu testi de güncelle.
 - Başarısız testi yeşil gösterme, atlama (`Skip`) gerekçesiz kullanma.

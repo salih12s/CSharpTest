@@ -20,14 +20,19 @@ Son güncelleme: 2026-10-21
 - `Program.cs` sonuna `public partial class Program;` eklendi (test erişimi için).
 - `.gitignore` test çıktıları ve `.env.*` ile genişletildi; `CLAUDE.md`'ye test ve commit kuralları eklendi.
 
+### ADIM 03 — GitHub ve yerel test düzeni
+- Remote (`origin`) ve commit geçmişi gizli bilgi açısından kontrol edildi; temiz.
+- Commit'ler normal `git push` ile `origin/main`'e gönderildi (force-push yok).
+- **Kural:** GitHub Actions ve ücretli CI kullanılmayacak. Her geliştirme adımı sonunda `dotnet restore`, `dotnet build` ve `dotnet test` (`TedarikCore.slnx`) yerelde çalıştırılacak; test sonuçları açıkça raporlanacak.
+
 ## Bilinen eksikler
 - Saf unit test yok: henüz test edilecek Domain/Application mantığı bulunmuyor. UnitTests şimdilik yalnızca mimari testi içeriyor.
 - `/health` yalnızca "uygulama ayakta" der; veritabanı kontrolü yok (DB henüz yok).
-- CI (GitHub Actions) yok; testler yalnızca yerelde çalışıyor.
+- CI bilerek yok (karar: yalnızca yerel test); testlerin çalıştırılması geliştiricinin sorumluluğunda.
 - Coverage ölçümü kurulmadı (`coverlet.collector` pakete dahil ama kullanılmıyor).
 
 ## Sırada
-- ADIM 03 (kullanıcı onayı bekleniyor).
+- ADIM 04 (kullanıcı onayı bekleniyor).
 
 ## Kapsam dışı (henüz yapılmadı)
 PostgreSQL, EF Core migration, Authentication/JWT, Product/Order/Inventory iş mantığı, React frontend, Docker/deployment.
