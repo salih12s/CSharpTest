@@ -62,7 +62,7 @@ Neden Application, Infrastructure'ı bilmiyor? Application "bana ürünleri kayd
 | `src/TedarikCore.Domain/Catalog` | Domain | "Catalog" = ürün kataloğu. Ürünle ilgili iş kuralları burada; veritabanını ya da web'i bilmez. |
 | `src/TedarikCore.Infrastructure/Persistence` | Infrastructure | "Persistence" = verinin kalıcı saklanması. Veritabanı erişim kodu burada: `AppDbContext.cs`. |
 | `src/TedarikCore.Infrastructure/Persistence/Configurations` | Infrastructure | Her entity'nin tablo eşlemesi (hangi kolon, hangi tür, hangi indeks). Tablo detayı Domain'e sızmasın diye burada. |
-| `src/TedarikCore.Infrastructure/Persistence/Migrations` | Infrastructure | **Migration** = veritabanının şemasını adım adım değiştiren, EF Core'un ürettiği dosyalar. Şu an tek dosya: `InitialCatalog` (**henüz hiçbir veritabanına uygulanmadı**). |
+| `src/TedarikCore.Infrastructure/Persistence/Migrations` | Infrastructure | **Migration** = veritabanının şemasını adım adım değiştiren, EF Core'un ürettiği dosyalar. Şu an tek dosya: `InitialCatalog` (**yalnızca `tedarikcore_test`'e uygulandı**; `tedarikcore_dev` hâlâ boş). |
 | `tests/TedarikCore.UnitTests` | Test | Hızlı testler; uygulama ayağa kalkmaz. |
 | `tests/TedarikCore.IntegrationTests` | Test | Uygulamayı bellekte ayağa kaldırıp HTTP ile deneyen testler. |
 | `docs/` | — | Proje belgeleri (durum, kararlar, bu rehber). |
@@ -207,7 +207,7 @@ Neden bağlantı dizesi ilk kullanımda okunuyor? Bağlantı bilgisi yoksa uygul
 ### Terimler
 - **EF Core (Entity Framework Core):** Veritabanı tablolarına C# nesneleriyle ulaşmayı sağlayan kütüphane.
 - **Npgsql:** .NET'in PostgreSQL ile konuşma sürücüsü. `Npgsql.EntityFrameworkCore.PostgreSQL` paketi EF Core'u PostgreSQL'e bağlar.
-- **`DbContext` (`AppDbContext`):** Veritabanıyla yapılan işlerin (sorgu, kaydetme) geçtiği kapı. İçinde `Products` adlı bir `DbSet<Product>` (ürün tablosunun kapısı) var; eşlemeyi `OnModelCreating` içindeki `ApplyConfigurationsFromAssembly` ile `Configurations` klasöründen toplar. Migration var ama veritabanına uygulanmadı, o yüzden gerçek veritabanında tablo yok.
+- **`DbContext` (`AppDbContext`):** Veritabanıyla yapılan işlerin (sorgu, kaydetme) geçtiği kapı. İçinde `Products` adlı bir `DbSet<Product>` (ürün tablosunun kapısı) var; eşlemeyi `OnModelCreating` içindeki `ApplyConfigurationsFromAssembly` ile `Configurations` klasöründen toplar. Migration `tedarikcore_test` veritabanına uygulandı; `tedarikcore_dev` henüz boş (tablo yok).
 - **`HealthCheckTags.Ready`:** `"ready"` yazısını tek yerde tutan sabit; yazım hatası olmasın diye.
 
 ### Veritabanı bağlantısı ve gizli bilgi
@@ -370,9 +370,9 @@ Aşağıdaki aşama sırası bir **öneridir**; kesin plan değildir. Her aşama
 |---|---|---|
 | `InitialCatalog` migration'ının `tedarikcore_dev`'e **uygulanması** | `tedarikcore_test`'e uygulandı ve doğrulandı; `tedarikcore_dev` bilerek hâlâ boş (0 tablo), onay bekliyor | Kullanıcı onayından sonra |
 | SKU harf büyüklüğü duyarlılığı | Unique index `ABC` ile `abc`'yi ayrı sayıyor (yalnızca Domain'i atlayan yazıcılar için risk); şema değişmedi | Karar verilirse yeni migration (bkz. DECISIONS 023) |
-| Ürün için veri yazan/okuyan kod (repository, servis), API | Kapsam dışıydı | Migration uygulandıktan sonra |
-| Güvenli veritabanı kullanıcısı | Geliştirmede `postgres` yönetici kullanıcısı ve basit bir demo parolası kullanılıyor | Canlıya çıkmadan önce; ayrı, yetkisi sınırlı kullanıcı |
-| Test için ayrı veritabanı | Gerçek-DB testi şimdilik `tedarikcore_dev`'e bağlanıyor (yalnızca okuma/bağlanma) | Veri yazan ilk testlerden önce (öneri: `tedarikcore_test`) |
+| Ürün için uygulama kodu (repository, servis) ve API | Bu aşamalarda yapılmadı | Application katmanı ve ilk endpoint'lerle |
+| Güvenli veritabanı kullanıcısı | Geliştirmede ve testlerde `postgres` yönetici kullanıcısı ve basit bir demo parolası kullanılıyor | Canlıya çıkmadan önce; ayrı, yetkisi sınırlı kullanıcı |
+| Test altyapısı dayanıklılığı | Hata durumunda test bağlantısının dispose edilmesi ve eşzamanlılık testinin temizliği iyileştirilecek (ayrıntı: `PROJECT_STATUS.md` "Sonraki teknik iyileştirmeler") | Bir sonraki uygun adımda |
 | Domain kavramları Order, Inventory (Product artık var) | İş kuralı henüz tasarlanmadı | Sonraki modüllerle |
 | Application katmanında unit test | Application'da henüz iş mantığı yok (Domain'de `Product` testleri var) | İlk use case yazılırken |
 | Application use case'leri ve interface'ler (`Abstractions`) | İş kuralı yok | İlk modül |
